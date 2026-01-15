@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "biblium"
+version = "2.0.2"
+description = "Comprehensive Python library for bibliometric analysis of scientific literature"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Lan Umek"}
+]
+keywords = [
+    "bibliometrics",
+    "scientometrics",
+    "citation analysis",
+    "scopus",
+    "web of science",
+    "openalex"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+requires-python = ">=3.9"
+dependencies = [
+    "pandas>=1.5.0",
+    "numpy>=1.21.0",
+    "matplotlib>=3.5.0",
+    "networkx>=2.6",
+    "scikit-learn>=1.0.0",
+    "openpyxl>=3.0.0",
+    "scipy>=1.7.0",
+    "seaborn>=0.11.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/lan-umek/biblium"
+
+[project.scripts]
+biblium-gui = "biblium.bibtkinter_app:main"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["biblium*"]
+
+[tool.setuptools.package-data]
+"biblium" = [
+    "additional files/*.xlsx",
+    "additional files/*.txt",
+    "additional files/icons/*",
+]
