@@ -26,3 +26,4 @@ pip install biblium
 
 Comprehensive tutorial avaiable at: https://github.com/user-attachments/files/24698225/Biblium.tutorial.pdf
 
+Detailed panel description in GUI: https://github.com/user-attachments/files/24698639/GUI_Panel_Descriptions.pdf
