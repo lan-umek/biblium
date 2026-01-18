@@ -9,13 +9,8 @@ Comprehensive Python library for bibliometric analysis of scientific literature.
 \## Installation
 
 ```
-[Biblium tutorial.pdf](https://github.com/user-attachments/files/24698225/Biblium.tutorial.pdf)
-
 pip install biblium
-
 ```
-
-
 
 \## Features
 
@@ -28,4 +23,6 @@ pip install biblium
 \- Group analysis with statistical associations
 
 \- GUI application for interactive analysis
+
+Comprehensive tutorial avaiable at: https://github.com/user-attachments/files/24698225/Biblium.tutorial.pdf
 
