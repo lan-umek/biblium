@@ -23,18 +23,15 @@ from __future__ import annotations
 
 import warnings
 from collections import Counter, defaultdict
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple, Set
-from itertools import combinations, product
+from dataclasses import dataclass
+from typing import Any, Dict, List, Tuple
+from itertools import combinations
 
 import numpy as np
 import pandas as pd
-from scipy.stats import chi2_contingency, fisher_exact
-from scipy.spatial.distance import cosine
+from scipy.stats import chi2_contingency
 
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-from matplotlib.colors import Normalize
 import seaborn as sns
 
 # =============================================================================
@@ -243,7 +240,6 @@ class ResearchGapsAnalysis:
 
 def get_sdg_columns(df: pd.DataFrame) -> List[str]:
     """Find SDG indicator columns."""
-    import re
     sdg_cols = []
     for col in df.columns:
         if col.startswith("SDG") and any(c.isdigit() for c in col):
@@ -987,7 +983,6 @@ def plot_sdg_gap_matrix(
     
     fig, ax = plt.subplots(figsize=figsize)
     ax.grid(False)
-    ax.grid(False)
     
     # Mask diagonal
     mask = np.eye(len(matrix), dtype=bool)
@@ -1021,7 +1016,6 @@ def plot_gap_summary(
 ) -> plt.Figure:
     """Plot top priority gaps."""
     fig, ax = plt.subplots(figsize=figsize)
-    ax.grid(False)
     ax.grid(False)
     
     top_gaps = analysis.top_priority_gaps[:15]

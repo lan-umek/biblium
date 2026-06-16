@@ -8,16 +8,15 @@ Includes coherence analysis, visualizations, and trend analysis.
 
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
-from typing import Optional, Dict, Any, List
 import pandas as pd
 import numpy as np
 import threading
 
 from biblium.gui.panels.base import BasePanel
-from biblium.gui.config import FONTS, get_theme
+from biblium.gui.config import FONTS
 from biblium.gui.widgets.tables import DataTable
 from biblium.gui.widgets.plots import PlotFrame
-from biblium.gui.widgets.forms import LabeledEntry, LabeledCombobox, LabeledSpinbox
+from biblium.gui.widgets.forms import LabeledCombobox, LabeledSpinbox
 from biblium.gui.widgets.cards import Card, StatsCard, CardGrid
 from biblium.gui.widgets.buttons import ActionButton
 
@@ -343,7 +342,7 @@ class TopicModelingPanel(BasePanel):
                 tb = traceback.format_exc()
                 print(f"[DEBUG] Error: {e}")
                 print(f"[DEBUG] Traceback: {tb}")
-                self.after(0, lambda: self._show_error(f"{e}\n\n{tb}"))
+                self.after(0, lambda exc=e: self._show_error(f"{exc}\n\n{tb}"))
         
         threading.Thread(target=do_analysis, daemon=True).start()
     
@@ -796,8 +795,6 @@ class TopicModelingPanel(BasePanel):
     
     def _create_comparative_wordclouds(self, parent, topics_df, result):
         """Create comparative word clouds colored by association to reference topic."""
-        from wordcloud import WordCloud
-        import matplotlib.colors as mcolors
         
         # Control frame for reference topic selection
         control_frame = tk.Frame(parent, bg=self.theme["bg_card"])
@@ -850,7 +847,6 @@ class TopicModelingPanel(BasePanel):
     def _update_comparative_wordclouds(self, parent):
         """Update comparative word clouds based on selected reference topic."""
         from wordcloud import WordCloud
-        import matplotlib.colors as mcolors
         
         topics_df = self._wordcloud_topics_df
         result = self._wordcloud_result

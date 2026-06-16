@@ -24,23 +24,14 @@ from __future__ import annotations
 
 import os
 import re
-import warnings
-from collections import Counter, defaultdict
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple, Set, Union
-from itertools import combinations
-import json
-import string
+from collections import Counter
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
-from scipy.spatial.distance import cosine
-from scipy.stats import percentileofscore
 
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-from matplotlib.colors import Normalize
-import seaborn as sns
 
 # Import core biblium bridge
 try:
@@ -1355,7 +1346,6 @@ def plot_method_categories(
     """Plot method categories distribution."""
     fig, ax = plt.subplots(figsize=figsize)
     ax.grid(False)
-    ax.grid(False)
     
     methods = result.method_distribution
     if methods:
@@ -1391,7 +1381,6 @@ def plot_study_design(
     """Plot study design distribution."""
     fig, ax = plt.subplots(figsize=figsize)
     ax.grid(False)
-    ax.grid(False)
     
     design_counts = result.methodology_breakdown["study_design"].value_counts()
     if len(design_counts) > 0:
@@ -1423,7 +1412,6 @@ def plot_research_approach(
 ) -> plt.Figure:
     """Plot research approach (empirical/quantitative/qualitative)."""
     fig, ax = plt.subplots(figsize=figsize)
-    ax.grid(False)
     ax.grid(False)
     
     breakdown = result.methodology_breakdown
@@ -1462,7 +1450,6 @@ def plot_software_usage(
 ) -> plt.Figure:
     """Plot software/tool usage."""
     fig, ax = plt.subplots(figsize=figsize)
-    ax.grid(False)
     ax.grid(False)
     
     software = result.software_usage
@@ -1522,7 +1509,6 @@ def plot_polarity_distribution(
     """Plot sentiment polarity distribution."""
     fig, ax = plt.subplots(figsize=figsize)
     ax.grid(False)
-    ax.grid(False)
     
     doc_results = result.document_results
     polarities = [r.sentiment.polarity for r in doc_results]
@@ -1551,7 +1537,6 @@ def plot_certainty_distribution(
     """Plot certainty score distribution."""
     fig, ax = plt.subplots(figsize=figsize)
     ax.grid(False)
-    ax.grid(False)
     
     doc_results = result.document_results
     certainties = [r.sentiment.certainty_score for r in doc_results]
@@ -1578,7 +1563,6 @@ def plot_tone_distribution(
 ) -> plt.Figure:
     """Plot tone distribution."""
     fig, ax = plt.subplots(figsize=figsize)
-    ax.grid(False)
     ax.grid(False)
     
     doc_results = result.document_results
@@ -1618,7 +1602,6 @@ def plot_sentiment_temporal(
 ) -> plt.Figure:
     """Plot sentiment temporal trends."""
     fig, ax = plt.subplots(figsize=figsize)
-    ax.grid(False)
     ax.grid(False)
     
     if len(result.temporal_trends) > 0:
@@ -1678,7 +1661,6 @@ def plot_novelty_scores(
     """Plot novelty score distribution."""
     fig, ax = plt.subplots(figsize=figsize)
     ax.grid(False)
-    ax.grid(False)
     
     doc_results = result.document_results
     novelty_scores = [r.novelty.novelty_score for r in doc_results]
@@ -1705,7 +1687,6 @@ def plot_contribution_types(
 ) -> plt.Figure:
     """Plot contribution types distribution."""
     fig, ax = plt.subplots(figsize=figsize)
-    ax.grid(False)
     ax.grid(False)
     
     doc_results = result.document_results
@@ -1750,7 +1731,6 @@ def plot_novelty_vs_claims(
     """Plot novelty vs claims scatter."""
     fig, ax = plt.subplots(figsize=figsize)
     ax.grid(False)
-    ax.grid(False)
     
     doc_results = result.document_results
     novelty_scores = [r.novelty.novelty_score for r in doc_results]
@@ -1778,7 +1758,6 @@ def plot_claim_strength(
 ) -> plt.Figure:
     """Plot claim strength distribution."""
     fig, ax = plt.subplots(figsize=figsize)
-    ax.grid(False)
     ax.grid(False)
     
     doc_results = result.document_results
@@ -1839,7 +1818,6 @@ def plot_methods_detected(
     """Plot methods/techniques detected."""
     fig, ax = plt.subplots(figsize=figsize)
     ax.grid(False)
-    ax.grid(False)
     
     methods = result.method_distribution
     if methods:
@@ -1874,7 +1852,6 @@ def plot_software_detected(
 ) -> plt.Figure:
     """Plot software/tools detected."""
     fig, ax = plt.subplots(figsize=figsize)
-    ax.grid(False)
     ax.grid(False)
     
     software = result.software_usage
@@ -1911,7 +1888,6 @@ def plot_datasets_detected(
     """Plot datasets detected."""
     fig, ax = plt.subplots(figsize=figsize)
     ax.grid(False)
-    ax.grid(False)
     
     datasets = result.dataset_usage
     if datasets:
@@ -1946,7 +1922,6 @@ def plot_entity_counts(
 ) -> plt.Figure:
     """Plot average entity counts per document."""
     fig, ax = plt.subplots(figsize=figsize)
-    ax.grid(False)
     ax.grid(False)
     
     entity_counts = {
@@ -2022,7 +1997,6 @@ def export_text_analysis_results(
     Dict[str, str]
         Dictionary mapping output type to filepath.
     """
-    import os
     os.makedirs(output_dir, exist_ok=True)
     
     exported = {}

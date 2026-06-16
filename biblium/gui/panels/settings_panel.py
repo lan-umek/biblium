@@ -7,7 +7,6 @@ Application settings as a regular panel.
 
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
-from typing import Optional
 
 from biblium.gui.config import FONTS, get_theme
 from biblium.gui.widgets.cards import Card

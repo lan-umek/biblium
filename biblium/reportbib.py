@@ -53,7 +53,7 @@ Notes
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Union
 
 import pandas as pd
 
@@ -554,7 +554,7 @@ def validate_template(
         
     except Exception as e:
         result['valid'] = False
-        result['errors'].append(f"Error reading template: {type(e).__name__}: {str(e)}")
+        result['errors'].append(f"Error reading template: {type(e).__name__}: {e!s}")
     
     if raise_on_error and not result['valid']:
         raise ValueError("; ".join(result['errors']))
@@ -1812,7 +1812,7 @@ def _apply_modern_table_style(table, header_color=None, zebra=True, autofit=True
     """
     from docx.oxml.ns import nsdecls, qn
     from docx.oxml import parse_xml, OxmlElement
-    from docx.shared import Pt, Twips
+    from docx.shared import Pt
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.enum.table import WD_TABLE_ALIGNMENT
     
@@ -1916,7 +1916,7 @@ def _add_cover_page(doc, title="Bibliometric Report", subtitle=None, date_str=No
     color : RGBColor, optional
         Accent color.
     """
-    from docx.shared import Pt, Inches
+    from docx.shared import Pt
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     from datetime import datetime
     

@@ -12,9 +12,8 @@ This module contains methods for:
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Optional
 
-import pandas as pd
 
 
 class TimeSeriesPlotsMixin:
@@ -110,7 +109,6 @@ class TimeSeriesPlotsMixin:
             Additional plot arguments.
         """
         from biblium import plotbib, utilsbib
-        import matplotlib.pyplot as plt
         
         # Get the appropriate data
         items_map = {

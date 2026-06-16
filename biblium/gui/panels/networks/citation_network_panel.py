@@ -8,15 +8,14 @@ Document citation network and Historiograph using biblium's implementation.
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import threading
-import io
-from typing import Dict, List, Set, Optional
+from typing import Dict, List
 
-from biblium.gui.config import FONTS, LAYOUT, get_theme
+from biblium.gui.config import FONTS
 from biblium.gui.core.events import event_bus, EventBus
 from biblium.gui.panels.base import BasePanel
-from biblium.gui.widgets.cards import Card, CollapsibleCard, StatsCard, CardGrid
+from biblium.gui.widgets.cards import Card, StatsCard, CardGrid
 from biblium.gui.widgets.buttons import ThemedButton, ActionButton
-from biblium.gui.widgets.forms import LabeledCombobox, LabeledCheckbox, LabeledSpinbox
+from biblium.gui.widgets.forms import LabeledCombobox, LabeledSpinbox
 from biblium.gui.widgets.tables import DataTable
 
 try:
@@ -652,7 +651,6 @@ class CitationNetworkPanel(BasePanel):
         network_type = result.get("network_type", "")
         
         try:
-            from PIL import Image, ImageTk
             
             fig = Figure(figsize=(14, 10), dpi=100)
             ax = fig.add_subplot(111)

@@ -7,16 +7,15 @@ Cluster entities (authors, sources, keywords, etc.) based on co-occurrence patte
 
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
-from typing import Optional, Dict, Any
+from typing import Optional
 import pandas as pd
-import numpy as np
 import threading
 
 from biblium.gui.panels.base import BasePanel
-from biblium.gui.config import FONTS, get_theme
+from biblium.gui.config import FONTS
 from biblium.gui.widgets.tables import DataTable
 from biblium.gui.widgets.plots import PlotFrame
-from biblium.gui.widgets.forms import LabeledEntry, LabeledCombobox, LabeledSpinbox
+from biblium.gui.widgets.forms import LabeledCombobox, LabeledSpinbox
 from biblium.gui.widgets.cards import Card, StatsCard, CardGrid
 from biblium.gui.widgets.buttons import ActionButton
 
@@ -416,7 +415,7 @@ class EntityClusteringPanel(BasePanel):
                 tb = traceback.format_exc()
                 print(f"[DEBUG] Entity clustering error: {e}")
                 print(f"[DEBUG] Traceback: {tb}")
-                self.after(0, lambda: self._show_error(f"{e}\n\n{tb}"))
+                self.after(0, lambda exc=e: self._show_error(f"{exc}\n\n{tb}"))
         
         threading.Thread(target=do_analysis, daemon=True).start()
     

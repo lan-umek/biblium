@@ -686,12 +686,7 @@ class ConceptBuilderPanel(BasePanel):
             messagebox.showinfo("Success", f"Filtered data ({len(filtered_df):,} documents) exported to:\n{filepath}")
         except Exception as e:
             messagebox.showerror("Error", f"Export failed:\n{str(e)}")
-        self._current_result = summary_df
-        self._current_data = data_df
-        
-        # Emit event
-        event_bus.emit(EventBus.ANALYSIS_COMPLETED, {"name": "Concept Builder"})
-    
+
     def _export_full_data(self, data_df: pd.DataFrame):
         """Export full data with concept indicators."""
         if data_df is None or len(data_df) == 0:

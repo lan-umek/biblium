@@ -8,10 +8,9 @@ Temporal analysis and trend visualization.
 import tkinter as tk
 from tkinter import ttk, messagebox
 import threading
-from typing import Dict, List, Optional
+from typing import Dict
 
-from biblium.gui.config import FONTS, LAYOUT, get_theme, ENTITY_TYPES
-from biblium.gui.core.events import event_bus, EventBus
+from biblium.gui.config import FONTS
 from biblium.gui.panels.base import BasePanel
 from biblium.gui.widgets.cards import Card, CollapsibleCard, StatsCard, CardGrid
 from biblium.gui.widgets.buttons import ThemedButton, ActionButton
@@ -567,7 +566,7 @@ class TrendsPanel(BasePanel):
             except Exception as e:
                 import traceback
                 traceback.print_exc()
-                self.after(0, lambda: self._on_trends_error(str(e)))
+                self.after(0, lambda msg=str(e): self._on_trends_error(msg))
         
         threading.Thread(target=do_analysis, daemon=True).start()
     
@@ -1082,7 +1081,7 @@ class TrendsPanel(BasePanel):
                 )
                 self.after(0, lambda r=result_text: self._show_ai_chart_result(r))
             except Exception as e:
-                error_msg = f"Error: {str(e)}"
+                error_msg = f"Error: {e!s}"
                 self.after(0, lambda msg=error_msg: self._show_ai_chart_result(msg))
         
         thread = threading.Thread(target=do_generate, daemon=True)

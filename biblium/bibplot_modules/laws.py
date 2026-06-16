@@ -10,7 +10,6 @@ This module contains methods for:
 
 from __future__ import annotations
 
-import os
 from typing import Any, Optional
 
 import pandas as pd
@@ -43,7 +42,7 @@ class LawsPlotsMixin:
         DataFrame
             Lotka distribution data.
         """
-        from biblium import plotbib, utilsbib
+        from biblium import utilsbib
         import matplotlib.pyplot as plt
         
         # Ensure author counts exist
@@ -122,7 +121,7 @@ class LawsPlotsMixin:
         DataFrame
             Bradford distribution data with zone assignments.
         """
-        from biblium import plotbib, utilsbib
+        from biblium import utilsbib
         import matplotlib.pyplot as plt
         
         # Ensure source counts exist
@@ -214,7 +213,7 @@ class LawsPlotsMixin:
         DataFrame
             Zipf distribution data.
         """
-        from biblium import plotbib, utilsbib
+        from biblium import utilsbib
         import matplotlib.pyplot as plt
         
         # Determine text column

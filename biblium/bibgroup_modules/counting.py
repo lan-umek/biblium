@@ -25,7 +25,7 @@ class GroupCountingMixin:
     group_matrix: pd.DataFrame
 
     def _group_count_entity(
-        self: "BiblioGroup",
+        self: BiblioGroup,
         count_method_name: str,
         attr_name: str,
         merge_type: Literal["all items", "shared items"] = "all items",
@@ -61,7 +61,7 @@ class GroupCountingMixin:
         return result
 
     def group_count_sources(
-        self: "BiblioGroup",
+        self: BiblioGroup,
         merge_type: Literal["all items", "shared items"] = "all items",
     ) -> pd.DataFrame:
         """
@@ -86,7 +86,7 @@ class GroupCountingMixin:
         )
 
     def group_count_author_keywords(
-        self: "BiblioGroup",
+        self: BiblioGroup,
         merge_type: Literal["all items", "shared items"] = "all items",
     ) -> pd.DataFrame:
         """
@@ -111,7 +111,7 @@ class GroupCountingMixin:
         )
 
     def group_count_index_keywords(
-        self: "BiblioGroup",
+        self: BiblioGroup,
         merge_type: Literal["all items", "shared items"] = "all items",
     ) -> pd.DataFrame:
         """
@@ -136,7 +136,7 @@ class GroupCountingMixin:
         )
 
     def group_count_all_countries(
-        self: "BiblioGroup",
+        self: BiblioGroup,
         merge_type: Literal["all items", "shared items"] = "all items",
     ) -> pd.DataFrame:
         """
@@ -161,7 +161,7 @@ class GroupCountingMixin:
         )
 
     def group_count_keywords(
-        self: "BiblioGroup",
+        self: BiblioGroup,
         merge_type: Literal["all items", "shared items"] = "all items",
     ) -> None:
         """
@@ -179,7 +179,7 @@ class GroupCountingMixin:
         self.group_count_index_keywords(merge_type=merge_type)
 
     def group_count_ca_countries(
-        self: "BiblioGroup",
+        self: BiblioGroup,
         merge_type: Literal["all items", "shared items"] = "all items",
     ) -> pd.DataFrame:
         """
@@ -204,7 +204,7 @@ class GroupCountingMixin:
         )
 
     def group_count_authors(
-        self: "BiblioGroup",
+        self: BiblioGroup,
         merge_type: Literal["all items", "shared items"] = "all items",
     ) -> pd.DataFrame:
         """
@@ -230,7 +230,7 @@ class GroupCountingMixin:
         )
 
     def group_count_affiliations(
-        self: "BiblioGroup",
+        self: BiblioGroup,
         merge_type: Literal["all items", "shared items"] = "all items",
     ) -> pd.DataFrame:
         """
@@ -255,7 +255,7 @@ class GroupCountingMixin:
         )
 
     def group_count_references(
-        self: "BiblioGroup",
+        self: BiblioGroup,
         merge_type: Literal["all items", "shared items"] = "all items",
     ) -> pd.DataFrame:
         """
@@ -280,7 +280,7 @@ class GroupCountingMixin:
         )
 
     def group_count_ngrams_abstract(
-        self: "BiblioGroup",
+        self: BiblioGroup,
         merge_type: Literal["all items", "shared items"] = "all items",
         **kwargs: Any,
     ) -> pd.DataFrame:
@@ -311,7 +311,7 @@ class GroupCountingMixin:
         )
 
     def group_count_ngrams_title(
-        self: "BiblioGroup",
+        self: BiblioGroup,
         merge_type: Literal["all items", "shared items"] = "all items",
         **kwargs: Any,
     ) -> pd.DataFrame:
@@ -342,7 +342,7 @@ class GroupCountingMixin:
         )
 
     def group_count_ngrams(
-        self: "BiblioGroup",
+        self: BiblioGroup,
         merge_type: Literal["all items", "shared items"] = "all items",
         **kwargs: Any,
     ) -> None:
@@ -363,6 +363,6 @@ class GroupCountingMixin:
         self.group_count_ngrams_title(merge_type=merge_type, **kwargs)
 
     # Aliases
-    def group_count_countries(self: "BiblioGroup", **kwargs: Any) -> pd.DataFrame:
+    def group_count_countries(self: BiblioGroup, **kwargs: Any) -> pd.DataFrame:
         """Alias for group_count_ca_countries."""
         return self.group_count_ca_countries(**kwargs)

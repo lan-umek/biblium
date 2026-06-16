@@ -12,8 +12,8 @@ This module provides advanced citation analysis functions:
 from __future__ import annotations
 
 import re
-from collections import Counter, defaultdict
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from collections import defaultdict
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd

@@ -136,7 +136,7 @@ class SleepingBeautyPanel(BasePanel):
                 
                 self.after(0, lambda: self._on_success(sb_df))
             except Exception as e:
-                self.after(0, lambda: self._show_error(str(e)))
+                self.after(0, lambda msg=str(e): self._show_error(msg))
         
         threading.Thread(target=do_detect, daemon=True).start()
     
@@ -292,7 +292,7 @@ class DisruptionPanel(BasePanel):
                 
                 self.after(0, lambda: self._on_success(di_df))
             except Exception as e:
-                self.after(0, lambda: self._show_error(str(e)))
+                self.after(0, lambda msg=str(e): self._show_error(msg))
         
         threading.Thread(target=do_calc, daemon=True).start()
     
@@ -448,7 +448,7 @@ class ResearchFrontsPanel(BasePanel):
                 
                 self.after(0, lambda: self._on_success(fronts_df))
             except Exception as e:
-                self.after(0, lambda: self._show_error(str(e)))
+                self.after(0, lambda msg=str(e): self._show_error(msg))
         
         threading.Thread(target=do_detect, daemon=True).start()
     

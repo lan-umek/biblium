@@ -11,7 +11,7 @@ This module contains:
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Tuple, Union, Any
+from typing import Dict, List, Optional, Any
 import pandas as pd
 import numpy as np
 
@@ -455,3 +455,114 @@ def save_to_pajek(
             for node in nodes:
                 cluster = G.nodes[node].get(partition_attr, 0)
                 f.write(f"{cluster}\n")
+
+
+# =============================================================================
+# BACKBONE EXTRACTION
+# =============================================================================
+
+def disparity_filter_backbone(
+    G: nx.Graph,
+    alpha: float = 0.05,
+    weight_attr: str = "weight",
+) -> nx.Graph:
+    """
+    Extract a network backbone using the disparity filter (Serrano,
+    Boguna & Vespignani 2009).
+
+    For each edge (i,j) with weight w_ij, computes a p-value relative
+    to the null model of uniformly distributed strengths at each node:
+
+        p_ij(at_i) = (1 - w_ij / s_i)^(k_i - 1)
+
+    where s_i = sum of weights of edges incident to i and k_i = degree.
+    Edge is kept if min(p_ij(at_i), p_ij(at_j)) < alpha (significant from
+    at least one node's perspective).
+
+    Parameters
+    ----------
+    G : nx.Graph
+        Weighted graph.
+    alpha : float, default 0.05
+        Significance threshold (smaller = stricter filtering).
+    weight_attr : str, default "weight"
+        Edge attribute storing weights.
+
+    Returns
+    -------
+    nx.Graph
+        Backbone subgraph with significant edges only.
+
+    References
+    ----------
+    Serrano, M.A., Boguna, M., Vespignani, A. (2009).
+    Extracting the multiscale backbone of complex weighted networks.
+    PNAS, 106(16), 6483-6488.
+    """
+    H = nx.Graph()
+    H.add_nodes_from(G.nodes(data=True))
+
+    # Pre-compute strength and degree for each node
+    strength = {}
+    degree = {}
+    for n in G.nodes():
+        strength[n] = sum(
+            G[n][m].get(weight_attr, 1.0) for m in G.neighbors(n)
+        )
+        degree[n] = G.degree(n)
+
+    for u, v, d in G.edges(data=True):
+        w = d.get(weight_attr, 1.0)
+        if w <= 0:
+            continue
+        # p-value from each endpoint's perspective
+        p_u = ((1 - w / strength[u]) ** (degree[u] - 1)
+               if degree[u] > 1 and strength[u] > 0 else 1.0)
+        p_v = ((1 - w / strength[v]) ** (degree[v] - 1)
+               if degree[v] > 1 and strength[v] > 0 else 1.0)
+        # Keep edge if significant from at least one perspective
+        if min(p_u, p_v) < alpha:
+            H.add_edge(u, v, **d)
+    return H
+
+
+def bridging_centralities(
+    G: nx.Graph,
+    top_n: int = 20,
+    weight_attr: str = "weight",
+) -> "pd.DataFrame":
+    """
+    Identify bridging nodes that connect communities by ranking on
+    betweenness centrality (with degree and clustering as auxiliaries).
+
+    Parameters
+    ----------
+    G : nx.Graph
+        Input (typically backbone) graph.
+    top_n : int
+        Top-N nodes to return.
+    weight_attr : str
+        Edge weight attribute used in betweenness computation.
+
+    Returns
+    -------
+    DataFrame
+        Columns: node, degree, betweenness, clustering, bridging_score.
+        Sorted by betweenness descending. Bridging score = betweenness
+        x (1 - clustering): high betweenness + low clustering = bridge.
+    """
+    bw = nx.betweenness_centrality(G, weight=weight_attr, normalized=True)
+    cl = nx.clustering(G, weight=weight_attr)
+    rows = []
+    for n in G.nodes():
+        rows.append({
+            "node": n,
+            "degree": G.degree(n),
+            "betweenness": bw.get(n, 0.0),
+            "clustering": cl.get(n, 0.0),
+            "bridging_score": (bw.get(n, 0.0) * (1 - cl.get(n, 0.0))),
+        })
+    out = pd.DataFrame(rows).sort_values(
+        "betweenness", ascending=False
+    ).head(top_n).reset_index(drop=True)
+    return out

@@ -13,9 +13,8 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Any, Dict, List, Optional, Union, Callable
+from typing import Any, Dict, List, Optional, Callable
 import pandas as pd
-import numpy as np
 
 # Progress bar support
 try:

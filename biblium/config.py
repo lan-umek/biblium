@@ -17,10 +17,9 @@ Configuration priority (highest to lowest):
 
 from __future__ import annotations
 
-import os
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List
 from dataclasses import dataclass, field, asdict
 import warnings
 
@@ -161,7 +160,7 @@ class PlotConfig:
         return asdict(self)
     
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "PlotConfig":
+    def from_dict(cls, data: Dict[str, Any]) -> PlotConfig:
         """Create from dictionary."""
         valid_fields = {f.name for f in cls.__dataclass_fields__.values()}
         filtered = {k: v for k, v in data.items() if k in valid_fields}
@@ -261,7 +260,7 @@ def apply_plot_style() -> None:
         return asdict(self)
     
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "BibliumConfig":
+    def from_dict(cls, data: Dict[str, Any]) -> BibliumConfig:
         """Create config from dictionary."""
         # Filter only valid fields
         valid_fields = {f.name for f in cls.__dataclass_fields__.values()}
@@ -491,7 +490,7 @@ def load_config(filepath: str = None) -> BibliumConfig:
         warnings.warn(f"Config file not found: {filepath}")
         return _config
     
-    with open(filepath, 'r', encoding='utf-8') as f:
+    with open(filepath, encoding='utf-8') as f:
         data = json.load(f)
     
     _config = BibliumConfig.from_dict(data)

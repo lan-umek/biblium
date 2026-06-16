@@ -8,10 +8,9 @@ Time-ordered citation network visualization showing knowledge flow.
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import threading
-import io
-from typing import Dict, Optional
+from typing import Dict
 
-from biblium.gui.config import FONTS, LAYOUT, get_theme
+from biblium.gui.config import FONTS
 from biblium.gui.core.events import event_bus, EventBus
 from biblium.gui.panels.base import BasePanel
 from biblium.gui.widgets.cards import Card
@@ -366,7 +365,6 @@ class HistoriographPanel(BasePanel):
         G = result["graph"]
         
         try:
-            from PIL import Image, ImageTk
             
             fig = Figure(figsize=(14, 10), dpi=100)
             ax = fig.add_subplot(111)

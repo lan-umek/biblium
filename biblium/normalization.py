@@ -15,7 +15,7 @@ Indicators used:
 import pandas as pd
 import numpy as np
 import requests
-from typing import Optional, Dict, List, Tuple
+from typing import Optional
 import warnings
 from functools import lru_cache
 

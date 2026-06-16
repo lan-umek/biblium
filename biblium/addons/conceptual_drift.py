@@ -14,27 +14,21 @@ Created for integration with the Biblium bibliometric toolkit.
 from __future__ import annotations
 
 import os
-import re
-import warnings
-from collections import Counter, defaultdict
-from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
+from collections import Counter
+from dataclasses import dataclass
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
-from scipy.stats import entropy, spearmanr, pearsonr
+from scipy.stats import spearmanr
 from scipy.spatial.distance import cosine, jensenshannon
-from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-from matplotlib.colors import Normalize, LinearSegmentedColormap
+from matplotlib.colors import Normalize
 from matplotlib.cm import ScalarMappable
 from matplotlib.lines import Line2D
-import seaborn as sns
 
 # Import core biblium bridge
 try:
@@ -772,7 +766,6 @@ def plot_drift_timeline(
     """
     fig, ax = plt.subplots(figsize=figsize)
     ax.grid(False)
-    ax.grid(False)
     
     if terms is None:
         terms = list(analysis.term_results.keys())
@@ -880,7 +873,6 @@ def plot_drift_heatmap(
     matrix = np.array(data)
     
     fig, ax = plt.subplots(figsize=figsize)
-    ax.grid(False)
     ax.grid(False)
     
     im = ax.imshow(matrix, cmap=cmap or CMAP_CONTINUOUS, aspect='auto')
@@ -990,7 +982,6 @@ def plot_context_evolution(
     
     fig, ax = plt.subplots(figsize=figsize)
     ax.grid(False)
-    ax.grid(False)
     
     im = ax.imshow(matrix, cmap=cmap or CMAP_CONTINUOUS, aspect='auto')
     
@@ -1058,7 +1049,6 @@ def plot_emerging_fading_terms(
     periods = result.periods[1:]  # Skip first period (no previous)
     
     fig, ax = plt.subplots(figsize=figsize)
-    ax.grid(False)
     ax.grid(False)
     
     # Emerging terms
@@ -1205,7 +1195,6 @@ def plot_drift_trajectory_2d(
     # Create plot
     fig, ax = plt.subplots(figsize=figsize)
     ax.grid(False)
-    ax.grid(False)
     
     # Color by time
     time_colors = "lightblue"
@@ -1225,11 +1214,12 @@ def plot_drift_trajectory_2d(
         marker = term_markers[t_idx % len(term_markers)]
         
         for i, (idx, period_idx) in enumerate(indices):
+            # biblium scatter style v2: thin white edge
             ax.scatter(
                 X_2d[idx, 0], X_2d[idx, 1],
                 c=["lightblue"],
                 marker=marker, s=150, alpha=0.8,
-                edgecolors='black', linewidths=1
+                edgecolors='white', linewidths=0.3
             )
             
             # Draw arrows between consecutive points
@@ -1426,7 +1416,6 @@ def plot_drift_velocity(
     
     fig, ax = plt.subplots(figsize=figsize)
     ax.grid(False)
-    ax.grid(False)
     
     periods = analysis.periods
     x_positions = np.arange(len(periods))
@@ -1522,7 +1511,6 @@ def plot_document_coverage(
     periods = analysis.periods
     
     fig, ax = plt.subplots(figsize=figsize)
-    ax.grid(False)
     ax.grid(False)
     
     if stacked:

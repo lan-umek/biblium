@@ -11,7 +11,7 @@ This module provides functions for temporal analysis of bibliometric data:
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd

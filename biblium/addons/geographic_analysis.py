@@ -24,21 +24,15 @@ from __future__ import annotations
 
 import os
 import re
-import warnings
 from collections import Counter, defaultdict
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple, Set, Union
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Tuple
 from itertools import combinations
-import json
 
 import numpy as np
 import pandas as pd
-from scipy.stats import pearsonr, spearmanr
 
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-from matplotlib.colors import Normalize, LogNorm
-from matplotlib.cm import ScalarMappable
 import seaborn as sns
 
 # Import core biblium bridge
@@ -1542,8 +1536,8 @@ def plot_world_map(
             c=df_with_coords[metric],
             cmap=cmap,
             alpha=0.7,
-            edgecolors="black",
-            linewidths=0.5)
+            edgecolors="white",
+            linewidths=0.3)
         
         # Add country labels for top 15
         for _, row in df_with_coords.head(15).iterrows():

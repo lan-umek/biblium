@@ -14,10 +14,10 @@ from __future__ import annotations
 import os
 import re
 import unicodedata
-from typing import Dict, List, Optional, Union
+from pathlib import Path
+from typing import Dict, Iterable, List, Optional, Union
 
 import pandas as pd
-import numpy as np
 
 # NLTK imports (with fallbacks)
 try:
@@ -472,5 +472,68 @@ def process_text_column(
     
     new_col = f"Processed {column}"
     df[new_col] = df[column].apply(process)
-    
+
     return df
+
+
+
+# ============================================================================
+# Combined stopwords for topic modeling — sklearn english + biblium curated
+# ============================================================================
+
+def get_combined_stopwords(
+    include_general=True,
+    include_specific=True,
+    specific_categories=None,
+    extra=None,
+    include_sklearn_english=True,
+):
+    """
+    Return a combined stopword list suitable for topic modeling (LDA/DTM/NMF).
+
+    Merges sklearn 'english' baseline + biblium general sheet (~1160) +
+    biblium specific sheet (categorized: Scholarly boilerplate, Methods,
+    Publisher boilerplate, Discourse markers, ...) + optional user extras.
+    """
+    sw = set()
+
+    if include_sklearn_english:
+        try:
+            from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
+            sw.update(w.lower() for w in ENGLISH_STOP_WORDS)
+        except Exception:
+            pass
+
+    bib_dir = Path(__file__).resolve().parent.parent
+    sw_file = bib_dir / "additional files" / "stopwords.xlsx"
+    if not sw_file.is_file():
+        sw_file = bib_dir.parent / "additional files" / "stopwords.xlsx"
+
+    if sw_file.is_file():
+        try:
+            if include_general:
+                gen = pd.read_excel(sw_file, sheet_name="general")
+                col = gen.columns[0]
+                for w in gen[col].dropna():
+                    w = str(w).lower().strip()
+                    if w:
+                        sw.add(w)
+            if include_specific:
+                sp = pd.read_excel(sw_file, sheet_name="specific")
+                if specific_categories:
+                    sp = sp[sp["Category"].isin(specific_categories)]
+                for w in sp["Word"].dropna():
+                    w = str(w).lower().strip()
+                    if w:
+                        sw.add(w)
+        except Exception as e:
+            import warnings
+            warnings.warn("Cannot read biblium stopwords.xlsx: " + str(e))
+
+    if extra:
+        for w in extra:
+            w = str(w).lower().strip()
+            if w:
+                sw.add(w)
+
+    return sorted(sw)

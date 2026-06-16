@@ -7,9 +7,9 @@ Common dialog windows.
 
 import tkinter as tk
 from tkinter import ttk
-from typing import Callable, List, Optional, Any
+from typing import List, Any
 
-from biblium.gui.config import FONTS, LAYOUT, get_theme
+from biblium.gui.config import FONTS, get_theme
 
 
 class BaseDialog(tk.Toplevel):

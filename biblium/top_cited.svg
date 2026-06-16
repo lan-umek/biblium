@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="48" height="48" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background circle -->
+  <circle cx="24" cy="24" r="22" fill="none"/>
+  
+  <!-- Trophy/medal shape for "top" -->
+  <path d="M24 8 L28 14 L35 15 L30 21 L31 28 L24 24 L17 28 L18 21 L13 15 L20 14 Z" 
+        fill="#aaaaaa" stroke="#404040" stroke-width="1"/>
+  
+  <!-- Citation lines -->
+  <rect x="12" y="32" width="24" height="3" rx="1" fill="#404040"/>
+  <rect x="14" y="37" width="20" height="2" rx="1" fill="#404040"/>
+  
+  <!-- Number indicator -->
+  <circle cx="38" cy="12" r="6" fill="#555555"/>
+  <text x="38" y="15" font-family="Arial" font-size="8" fill="#404040" text-anchor="middle" font-weight="bold">1</text>
+</svg>

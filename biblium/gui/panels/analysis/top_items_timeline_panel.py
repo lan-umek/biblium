@@ -9,11 +9,8 @@ Uses biblium's plot_item_time_stats() for scatter/bubble visualization.
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import threading
-import os
-from typing import Dict, List, Optional
 
-from biblium.gui.config import FONTS, LAYOUT, get_theme
-from biblium.gui.core.events import event_bus
+from biblium.gui.config import FONTS
 from biblium.gui.panels.base import BasePanel
 from biblium.gui.widgets.cards import Card
 from biblium.gui.widgets.buttons import ThemedButton, ActionButton

@@ -10,10 +10,8 @@ This module contains methods for:
 
 from __future__ import annotations
 
-import os
 from typing import Any, Dict, Optional, Tuple
 
-import pandas as pd
 
 
 class GeographicPlotsMixin:
@@ -156,13 +154,23 @@ class GeographicPlotsMixin:
         ax1.barh(
             range(len(pairs_df)),
             pairs_df["Weight"],
-            color="steelblue"
+            color="#3b82c4",
+            edgecolor="white",
         )
         ax1.set_yticks(range(len(pairs_df)))
-        ax1.set_yticklabels([f"{r['Source']} - {r['Target']}" for _, r in pairs_df.iterrows()])
+        ax1.set_yticklabels(
+            [f"{r['Source']} - {r['Target']}" for _, r in pairs_df.iterrows()],
+            fontsize=8,
+        )
+        # Inline value labels
+        for i, w in enumerate(pairs_df["Weight"].values):
+            ax1.text(w, i, f"  {int(w)}", va="center", ha="left", fontsize=8)
         ax1.set_xlabel("Collaborations")
         ax1.set_title(f"Top {top_n_pairs} Country Collaboration Pairs")
         ax1.invert_yaxis()
+        ax1.grid(False)
+        for sp in ("top", "right"):
+            ax1.spines[sp].set_visible(False)
         plt.tight_layout()
         
         if self.res_folder is not None:
@@ -203,6 +211,8 @@ class GeographicPlotsMixin:
         
         fig3, ax3 = plt.subplots(figsize=figsizes["heatmap"])
         
+        # linewidths=0 -> brez vidnih cell borders v sns.heatmap
+        kwargs.setdefault("linewidths", 0.0)
         plotbib.plot_heatmap(
             heatmap_data,
             ax=ax3,
@@ -210,6 +220,7 @@ class GeographicPlotsMixin:
             title="Country Collaboration Matrix",
             **kwargs,
         )
+        ax3.grid(False)
         
         if self.res_folder is not None:
             self._save_plot(f"{filename}_heatmap")

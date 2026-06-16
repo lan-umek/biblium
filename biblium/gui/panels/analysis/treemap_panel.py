@@ -8,11 +8,11 @@ Generate treemap visualizations from bibliometric data using biblium's implement
 import tkinter as tk
 from tkinter import ttk, messagebox
 import threading
-from typing import Dict, Optional
+from typing import Optional
 import io
 import textwrap
 
-from biblium.gui.config import FONTS, LAYOUT, get_theme
+from biblium.gui.config import FONTS
 from biblium.gui.core.events import event_bus, EventBus
 from biblium.gui.panels.base import BasePanel
 from biblium.gui.widgets.cards import Card
@@ -366,7 +366,7 @@ class TreemapPanel(BasePanel):
             except Exception as e:
                 import traceback
                 traceback.print_exc()
-                self.after(0, lambda: self._on_error(str(e)))
+                self.after(0, lambda msg=str(e): self._on_error(msg))
         
         threading.Thread(target=do_generate, daemon=True).start()
     

@@ -7,9 +7,9 @@ Data table with sorting, filtering, and export.
 
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional
 
-from biblium.gui.config import FONTS, LAYOUT, get_theme
+from biblium.gui.config import FONTS, get_theme
 
 try:
     import pandas as pd
@@ -653,7 +653,7 @@ class DataTable(tk.Frame):
             self.after(0, lambda r=result: self._show_ai_result(r))
             
         except Exception as e:
-            error_msg = f"Error: {str(e)}"
+            error_msg = f"Error: {e!s}"
             self.after(0, lambda msg=error_msg: self._show_ai_result(msg))
         finally:
             self.after(0, self._reset_ai_button)

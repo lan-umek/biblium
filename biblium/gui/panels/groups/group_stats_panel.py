@@ -11,9 +11,9 @@ Supports statistics for:
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import threading
-from typing import Dict, List, Optional, Any
+from typing import Dict, List
 
-from biblium.gui.config import FONTS, LAYOUT, get_theme
+from biblium.gui.config import FONTS
 from biblium.gui.core.events import event_bus, EventBus
 from biblium.gui.panels.base import BasePanel
 from biblium.gui.widgets.cards import Card, CollapsibleCard, StatsCard, CardGrid
@@ -563,7 +563,7 @@ class GroupStatsPanel(BasePanel):
             except Exception as e:
                 import traceback
                 traceback.print_exc()
-                self.after(0, lambda: self._show_error(str(e)))
+                self.after(0, lambda msg=str(e): self._show_error(msg))
         
         threading.Thread(target=do_stats, daemon=True).start()
     
@@ -754,7 +754,7 @@ class GroupStatsPanel(BasePanel):
             traceback.print_exc()
             tk.Label(
                 self.results_tab,
-                text=f"Could not create plot: {str(e)}",
+                text=f"Could not create plot: {e!s}",
                 font=FONTS.get_font("small"),
                 bg=self.theme["bg_card"],
                 fg=self.theme.get("warning", "#f59e0b"),
@@ -781,7 +781,7 @@ class GroupStatsPanel(BasePanel):
                         )
                         results[key] = result
                 except Exception as e:
-                    errors.append(f"{config['label']}: {str(e)}")
+                    errors.append(f"{config['label']}: {e!s}")
             
             self.after(0, lambda: self._display_all_stats_summary(results, errors))
         

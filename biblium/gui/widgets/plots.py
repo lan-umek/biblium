@@ -9,7 +9,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog
 from typing import Callable, Optional, Tuple
 
-from biblium.gui.config import FONTS, LAYOUT, get_theme
+from biblium.gui.config import FONTS, get_theme
 
 try:
     import matplotlib
@@ -456,7 +456,7 @@ class PlotFrame(tk.Frame):
                 except Exception as e:
                     print(f"[DEBUG AI] Callback scheduling error: {e}")
             except Exception as e:
-                error_msg = f"Error: {str(e)}"
+                error_msg = f"Error: {e!s}"
                 print(f"[DEBUG AI] Generation error: {e}")
                 import traceback
                 traceback.print_exc()
@@ -1399,7 +1399,7 @@ def add_plot_context_menu(canvas_widget, figure, theme_bg="white", parent_frame=
                 )
                 canvas_widget.after(0, lambda r=result: show_ai_result(r))
             except Exception as e:
-                error_msg = f"Error: {str(e)}"
+                error_msg = f"Error: {e!s}"
                 canvas_widget.after(0, lambda msg=error_msg: show_ai_result(msg))
         
         thread = threading.Thread(target=do_generate, daemon=True)

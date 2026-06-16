@@ -6,7 +6,7 @@ Modern UI with proper scrolling and display
 """
 
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox, scrolledtext
+from tkinter import ttk, filedialog, messagebox
 import traceback
 import threading
 import os
@@ -630,7 +630,7 @@ class BibliumApp(tk.Tk):
                     self.after(0, lambda: done(True, f"Loaded {self.bib.n:,} documents"))
                 except Exception as e:
                     traceback.print_exc()
-                    self.after(0, lambda: done(False, str(e)))
+                    self.after(0, lambda msg=str(e): done(False, msg))
             
             def done(ok, msg):
                 spinner.stop()

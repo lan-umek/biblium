@@ -26,7 +26,7 @@ class GroupStatsMixin:
     default_separator: str
 
     def _get_group_entity_stats(
-        self: "BiblioGroup",
+        self: BiblioGroup,
         entity_col: Union[str, List[str]],
         entity_label: str,
         count_method_name: str,
@@ -122,7 +122,7 @@ class GroupStatsMixin:
         return stats
 
     def get_group_sources_stats(
-        self: "BiblioGroup",
+        self: BiblioGroup,
         items_of_interest: Optional[List[str]] = None,
         exclude_items: Optional[List[str]] = None,
         top_n: int = 100,
@@ -174,7 +174,7 @@ class GroupStatsMixin:
         )
 
     def get_group_author_keywords_stats(
-        self: "BiblioGroup",
+        self: BiblioGroup,
         items_of_interest: Optional[List[str]] = None,
         exclude_items: Optional[List[str]] = None,
         top_n: int = 100,
@@ -223,7 +223,7 @@ class GroupStatsMixin:
         )
 
     def get_group_index_keywords_stats(
-        self: "BiblioGroup",
+        self: BiblioGroup,
         items_of_interest: Optional[List[str]] = None,
         exclude_items: Optional[List[str]] = None,
         top_n: int = 100,
@@ -272,7 +272,7 @@ class GroupStatsMixin:
         )
 
     def get_group_keywords_stats(
-        self: "BiblioGroup",
+        self: BiblioGroup,
         items_of_interest: Optional[List[str]] = None,
         exclude_items: Optional[List[str]] = None,
         top_n: int = 100,
@@ -317,7 +317,7 @@ class GroupStatsMixin:
         )
 
     def get_group_authors_stats(
-        self: "BiblioGroup",
+        self: BiblioGroup,
         items_of_interest: Optional[List[str]] = None,
         exclude_items: Optional[List[str]] = None,
         top_n: int = 100,
@@ -350,7 +350,10 @@ class GroupStatsMixin:
             Author statistics per group.
         """
         return self._get_group_entity_stats(
-            entity_col="Authors",
+            # count_authors uporablja "Author full names"; entity_col mora
+            # biti isti stolpec, sicer se imena ne ujemajo in rezultat je
+            # prazen (kratka "Authors" oblika != polna oblika).
+            entity_col=["Author full names", "Authors"],
             entity_label="Author",
             count_method_name="count_authors",
             attr_name="group_authors_stats_df",
@@ -366,7 +369,7 @@ class GroupStatsMixin:
         )
 
     def get_group_affiliations_stats(
-        self: "BiblioGroup",
+        self: BiblioGroup,
         items_of_interest: Optional[List[str]] = None,
         exclude_items: Optional[List[str]] = None,
         top_n: int = 100,
@@ -415,7 +418,7 @@ class GroupStatsMixin:
         )
 
     def get_group_references_stats(
-        self: "BiblioGroup",
+        self: BiblioGroup,
         items_of_interest: Optional[List[str]] = None,
         exclude_items: Optional[List[str]] = None,
         top_n: int = 100,
@@ -464,7 +467,7 @@ class GroupStatsMixin:
         )
 
     def get_group_all_countries_stats(
-        self: "BiblioGroup",
+        self: BiblioGroup,
         items_of_interest: Optional[List[str]] = None,
         exclude_items: Optional[List[str]] = None,
         top_n: int = 100,
@@ -513,7 +516,7 @@ class GroupStatsMixin:
         )
 
     def get_group_ca_countries_stats(
-        self: "BiblioGroup",
+        self: BiblioGroup,
         items_of_interest: Optional[List[str]] = None,
         exclude_items: Optional[List[str]] = None,
         top_n: int = 100,
@@ -562,7 +565,7 @@ class GroupStatsMixin:
         )
 
     def get_group_ngrams_abstract_stats(
-        self: "BiblioGroup",
+        self: BiblioGroup,
         items_of_interest: Optional[List[str]] = None,
         exclude_items: Optional[List[str]] = None,
         top_n: int = 100,
@@ -611,7 +614,7 @@ class GroupStatsMixin:
         )
 
     def get_group_ngrams_title_stats(
-        self: "BiblioGroup",
+        self: BiblioGroup,
         items_of_interest: Optional[List[str]] = None,
         exclude_items: Optional[List[str]] = None,
         top_n: int = 100,
@@ -660,7 +663,7 @@ class GroupStatsMixin:
         )
 
     def get_group_ngrams_stats(
-        self: "BiblioGroup",
+        self: BiblioGroup,
         items_of_interest: Optional[List[str]] = None,
         exclude_items: Optional[List[str]] = None,
         top_n: int = 100,
@@ -692,7 +695,7 @@ class GroupStatsMixin:
         )
 
     def get_group_fields_stats(
-        self: "BiblioGroup",
+        self: BiblioGroup,
         items_of_interest: Optional[List[str]] = None,
         exclude_items: Optional[List[str]] = None,
         top_n: int = 100,
@@ -741,7 +744,7 @@ class GroupStatsMixin:
         )
 
     def get_group_areas_stats(
-        self: "BiblioGroup",
+        self: BiblioGroup,
         items_of_interest: Optional[List[str]] = None,
         exclude_items: Optional[List[str]] = None,
         top_n: int = 100,
@@ -790,7 +793,7 @@ class GroupStatsMixin:
         )
 
     def get_group_sciences_stats(
-        self: "BiblioGroup",
+        self: BiblioGroup,
         items_of_interest: Optional[List[str]] = None,
         exclude_items: Optional[List[str]] = None,
         top_n: int = 100,

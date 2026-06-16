@@ -20,7 +20,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import requests
-from typing import Optional, Dict, Tuple, List, Union
+from typing import Optional, Tuple
 from dataclasses import dataclass
 import warnings
 

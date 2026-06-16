@@ -12,10 +12,13 @@ Features:
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple, Any
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Any
 
 import numpy as np
 import pandas as pd
+
+if TYPE_CHECKING:
+    import matplotlib  # noqa: F401
 
 
 @dataclass

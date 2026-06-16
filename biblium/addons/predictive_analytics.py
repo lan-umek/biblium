@@ -21,29 +21,22 @@ Created for integration with the Biblium bibliometric toolkit.
 from __future__ import annotations
 
 import os
-import re
-import warnings
 from collections import Counter, defaultdict
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple, Set
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Tuple
 from itertools import combinations
-import json
 
 import numpy as np
 import pandas as pd
-from scipy.stats import percentileofscore
-from scipy.spatial.distance import cosine
 
-from sklearn.model_selection import train_test_split, cross_val_score, GridSearchCV
+from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
-from sklearn.linear_model import LinearRegression, Ridge, Lasso
+from sklearn.linear_model import LinearRegression, Ridge
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-import seaborn as sns
 
 # Optional imports
 try:
@@ -1097,7 +1090,6 @@ def plot_citation_prediction_performance(
     
     fig, ax = plt.subplots(figsize=figsize)
     ax.grid(False)
-    ax.grid(False)
     df = result.citation_predictions
     
     # Actual vs Predicted
@@ -1160,7 +1152,6 @@ def plot_research_gaps(
     
     fig, ax = plt.subplots(figsize=figsize)
     ax.grid(False)
-    ax.grid(False)
     gaps = result.research_gaps[:n_gaps]
     
     # Gap scores
@@ -1208,7 +1199,6 @@ def plot_hot_topics(
         return fig
     
     fig, ax = plt.subplots(figsize=figsize)
-    ax.grid(False)
     ax.grid(False)
     df = result.hot_topics.head(n_topics)
     

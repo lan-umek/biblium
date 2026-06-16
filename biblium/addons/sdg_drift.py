@@ -23,26 +23,17 @@ Created for integration with the Biblium bibliometric toolkit.
 from __future__ import annotations
 
 import warnings
-from collections import Counter, defaultdict
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple, Set
+from dataclasses import dataclass
+from typing import Any, Dict, List, Tuple
 from itertools import combinations
 
 import numpy as np
 import pandas as pd
-from scipy.stats import entropy, spearmanr, chi2_contingency
-from scipy.spatial.distance import cosine, jensenshannon
-from scipy.cluster.hierarchy import linkage, dendrogram, fcluster
+from scipy.spatial.distance import jensenshannon
 
-from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
-from sklearn.decomposition import PCA
+from sklearn.feature_extraction.text import TfidfVectorizer
 
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-from matplotlib.colors import Normalize, LinearSegmentedColormap
-from matplotlib.cm import ScalarMappable
-from matplotlib.lines import Line2D
 import seaborn as sns
 
 # Try to import conceptual_drift base module
@@ -800,7 +791,6 @@ def plot_sdg_drift_heatmap(
     
     fig, ax = plt.subplots(figsize=figsize)
     ax.grid(False)
-    ax.grid(False)
     
     sns.heatmap(
         df_matrix,
@@ -839,7 +829,6 @@ def plot_sdg_drift_trajectories(
         sdgs = [s for s, _ in analysis.most_drifting_sdgs[:5]]
     
     fig, ax = plt.subplots(figsize=figsize)
-    ax.grid(False)
     ax.grid(False)
     
     colors = plt.cm.tab10(np.linspace(0, 1, len(sdgs)))
@@ -936,7 +925,6 @@ def plot_perspective_drift(
     """
     fig, ax = plt.subplots(figsize=figsize)
     ax.grid(False)
-    ax.grid(False)
     
     colors = {
         "Life": "#e41a1c",
@@ -1018,7 +1006,6 @@ def plot_emerging_terms_wordcloud(
     ).generate_from_frequencies(keywords)
     
     fig, ax = plt.subplots(figsize=figsize)
-    ax.grid(False)
     ax.grid(False)
     ax.imshow(wc, interpolation="bilinear")
     ax.axis("off")

@@ -8,16 +8,15 @@ Tracks how topics evolve over time.
 
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
-from typing import Optional, Dict, Any, List
 import pandas as pd
 import numpy as np
 import threading
 
 from biblium.gui.panels.base import BasePanel
-from biblium.gui.config import FONTS, get_theme
+from biblium.gui.config import FONTS
 from biblium.gui.widgets.tables import DataTable
 from biblium.gui.widgets.plots import PlotFrame
-from biblium.gui.widgets.forms import LabeledEntry, LabeledCombobox, LabeledSpinbox
+from biblium.gui.widgets.forms import LabeledCombobox, LabeledSpinbox
 from biblium.gui.widgets.cards import Card, StatsCard, CardGrid
 from biblium.gui.widgets.buttons import ActionButton
 
@@ -311,7 +310,7 @@ class DynamicTopicsPanel(BasePanel):
                 
             except Exception as e:
                 import traceback
-                self.after(0, lambda: self._show_error(f"{e}\n\n{traceback.format_exc()}"))
+                self.after(0, lambda exc=e: self._show_error(f"{exc}\n\n{traceback.format_exc()}"))
         
         threading.Thread(target=do_analysis, daemon=True).start()
     

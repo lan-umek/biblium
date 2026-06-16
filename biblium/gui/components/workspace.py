@@ -7,9 +7,9 @@ Main content workspace with tabbed panels.
 
 import tkinter as tk
 from tkinter import ttk
-from typing import Callable, Dict, Optional, Type, Any
+from typing import Dict, Optional, Type
 
-from biblium.gui.config import FONTS, LAYOUT, get_theme
+from biblium.gui.config import FONTS, get_theme
 from biblium.gui.core.events import event_bus, EventBus
 
 

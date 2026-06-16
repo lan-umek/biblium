@@ -13,11 +13,10 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from collections import defaultdict, Counter
+from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from typing import Dict, List, Optional, Set, Tuple
 
-import numpy as np
 import pandas as pd
 
 try:

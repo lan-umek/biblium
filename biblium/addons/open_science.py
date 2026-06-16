@@ -25,22 +25,14 @@ from __future__ import annotations
 
 import os
 import re
-import json
-import warnings
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple, Set, Union
-from datetime import datetime
-import hashlib
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
-from scipy.stats import percentileofscore, spearmanr, chi2_contingency
 
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-from matplotlib.colors import Normalize
-import seaborn as sns
 
 # Optional imports
 try:
@@ -1053,7 +1045,6 @@ def plot_open_science_overview(
     
     fig, ax = plt.subplots(figsize=figsize)
     ax.grid(False)
-    ax.grid(False)
     
     stats = result.aggregate_stats
     
@@ -1156,7 +1147,6 @@ def plot_temporal_trends(
     
     fig, ax = plt.subplots(figsize=figsize)
     ax.grid(False)
-    ax.grid(False)
     df = result.temporal_trends
     
     # 1. Open access trend
@@ -1201,7 +1191,6 @@ def plot_repository_usage(
     """Plot repository usage statistics."""
     
     fig, ax = plt.subplots(figsize=figsize)
-    ax.grid(False)
     ax.grid(False)
     
     repo_data = result.repository_usage
@@ -1273,7 +1262,6 @@ def plot_fair_scores(
     """Plot FAIR compliance scores."""
     
     fig, ax = plt.subplots(figsize=figsize)
-    ax.grid(False)
     ax.grid(False)
     
     df = result.summary_df

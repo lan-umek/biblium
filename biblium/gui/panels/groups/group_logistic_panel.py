@@ -8,17 +8,16 @@ with coefficients, odds ratios, p-values, and significance indicators.
 
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
-from typing import Dict, List, Optional, Any
+from typing import Dict, List
 import pandas as pd
 import numpy as np
 
 from biblium.gui.panels.base import BasePanel
 from biblium.gui.widgets.cards import Card, StatsCard, CardGrid
-from biblium.gui.widgets.forms import LabeledCombobox, LabeledCheckbox, LabeledEntry
+from biblium.gui.widgets.forms import LabeledCombobox
 from biblium.gui.widgets.buttons import ActionButton
-from biblium.gui.widgets.plots import PlotFrame
 from biblium.gui.widgets.tables import DataTable
-from biblium.gui.config import FONTS, get_theme
+from biblium.gui.config import FONTS
 from biblium.gui.core.events import EventBus
 
 try:
@@ -358,7 +357,6 @@ class GroupLogisticPanel(BasePanel):
         try:
             import statsmodels.api as sm
             from sklearn.feature_extraction.text import CountVectorizer
-            import re
             
             # Get settings
             text_column = self.text_col_var.get()

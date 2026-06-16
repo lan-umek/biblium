@@ -10,17 +10,17 @@ Includes comprehensive item filtering (include/exclude lists, regex, file loadin
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import threading
-from typing import Dict, Optional, List, Tuple, Set
+from typing import List
 import io
 import os
 import re
 
-from biblium.gui.config import FONTS, LAYOUT, get_theme
+from biblium.gui.config import FONTS
 from biblium.gui.core.events import event_bus, EventBus
 from biblium.gui.panels.base import BasePanel
 from biblium.gui.widgets.cards import Card
 from biblium.gui.widgets.buttons import ThemedButton, ActionButton
-from biblium.gui.widgets.forms import LabeledCombobox, LabeledSpinbox, LabeledCheckbox, LabeledEntry
+from biblium.gui.widgets.forms import LabeledCombobox, LabeledSpinbox, LabeledCheckbox
 
 try:
     import pandas as pd
@@ -195,7 +195,7 @@ class EntityFilterFrame(tk.Frame):
                     return
             else:
                 # Text file
-                with open(filepath, 'r', encoding='utf-8') as f:
+                with open(filepath, encoding='utf-8') as f:
                     lines = f.readlines()
                     start_idx = 1 if skip_header and lines else 0
                     for line in lines[start_idx:]:
@@ -845,7 +845,6 @@ class RelationshipPanel(BasePanel):
         """Create Sankey diagram using plotbib implementation."""
         from biblium import plotbib
         import tempfile
-        import os
         
         # Use plotbib's bipartite sankey function
         fig = plotbib.plot_bipartite_sankey(

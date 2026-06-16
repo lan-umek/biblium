@@ -24,19 +24,15 @@ from __future__ import annotations
 
 import warnings
 from collections import Counter, defaultdict
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple, Set
+from dataclasses import dataclass
+from typing import Any, Dict, List, Tuple
 from itertools import combinations
 
 import numpy as np
 import pandas as pd
-from scipy.stats import pearsonr, spearmanr
-from scipy.cluster.hierarchy import linkage, fcluster, dendrogram
+from scipy.cluster.hierarchy import linkage, fcluster
 
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-from matplotlib.colors import Normalize, LinearSegmentedColormap
-from matplotlib.cm import ScalarMappable
 import seaborn as sns
 
 # Network libraries
@@ -227,7 +223,6 @@ class SDGNetworkAnalysis:
 
 def get_sdg_columns(df: pd.DataFrame) -> List[str]:
     """Find SDG indicator columns in DataFrame."""
-    import re
     sdg_cols = []
     for col in df.columns:
         if col.startswith("SDG") and any(c.isdigit() for c in col):
@@ -917,7 +912,6 @@ def plot_sdg_network(
     
     fig, ax = plt.subplots(figsize=figsize)
     ax.grid(False)
-    ax.grid(False)
     
     # Layout
     if layout == "spring":
@@ -992,7 +986,6 @@ def plot_sdg_cooccurrence_heatmap(
     
     fig, ax = plt.subplots(figsize=figsize)
     ax.grid(False)
-    ax.grid(False)
     
     sns.heatmap(
         plot_matrix,
@@ -1030,7 +1023,6 @@ def plot_bridge_papers_summary(
         return None
     
     fig, ax = plt.subplots(figsize=figsize)
-    ax.grid(False)
     ax.grid(False)
     
     scores = [p.bridge_score for p in papers]

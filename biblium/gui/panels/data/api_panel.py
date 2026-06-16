@@ -8,22 +8,20 @@ Panel for fetching bibliometric data from OpenAlex and Dimensions APIs.
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import threading
-import json
 import os
-from typing import Optional, Dict, List
+from typing import Dict, List
 from datetime import datetime
 
-from biblium.gui.config import FONTS, LAYOUT, get_theme
+from biblium.gui.config import FONTS
 from biblium.gui.core.events import event_bus, EventBus
 from biblium.gui.panels.base import BasePanel
 from biblium.gui.widgets.cards import Card, CollapsibleCard, StatsCard, CardGrid
 from biblium.gui.widgets.buttons import ThemedButton, ActionButton
 from biblium.gui.widgets.forms import (
     LabeledEntry, LabeledCombobox, LabeledCheckbox, 
-    LabeledSpinbox, LabeledTextArea,
+    LabeledSpinbox,
 )
 from biblium.gui.widgets.tables import DataTable
-from biblium.gui.widgets.progress import LoadingSpinner
 
 try:
     import pandas as pd
@@ -236,7 +234,6 @@ class APIDataPanel(BasePanel):
         auto_load_cb.pack(anchor=tk.W, pady=(8, 4))
         
         # Keyword Processing Card (Collapsible)
-        from biblium.gui.widgets.cards import CollapsibleCard
         
         kw_card = CollapsibleCard(
             self.options_content,
@@ -310,7 +307,6 @@ class APIDataPanel(BasePanel):
     
     def _try_load_default_stopwords(self):
         """Try to automatically load the default stopwords file."""
-        import os
         
         # Common locations for the stopwords file
         possible_paths = [

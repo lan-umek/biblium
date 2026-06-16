@@ -606,7 +606,7 @@ def load_config() -> Dict:
     config_path = get_config_path()
     if config_path.exists():
         try:
-            with open(config_path, "r") as f:
+            with open(config_path) as f:
                 return json.load(f)
         except Exception:
             pass

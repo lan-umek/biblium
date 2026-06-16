@@ -11,11 +11,8 @@ This module contains methods for:
 
 from __future__ import annotations
 
-import os
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Optional, Tuple
 
-import pandas as pd
-import numpy as np
 
 
 class NetworkPlotsMixin:
@@ -54,7 +51,6 @@ class NetworkPlotsMixin:
         **kwargs :
             Additional plot arguments.
         """
-        from biblium import plotbib, utilsbib
         from biblium.utilsbib_modules.network import build_cooccurrence_matrix, matrix_to_network
         import matplotlib.pyplot as plt
         import networkx as nx

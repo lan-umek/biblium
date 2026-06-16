@@ -7,9 +7,9 @@ Foundation classes for themed, consistent widgets.
 
 import tkinter as tk
 from tkinter import ttk
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Tuple
 
-from biblium.gui.config import LAYOUT, FONTS, get_theme
+from biblium.gui.config import FONTS, get_theme
 
 
 class BaseFrame(tk.Frame):

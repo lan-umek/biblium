@@ -1365,7 +1365,7 @@ def read_pubmed_summary(
     
     records = []
     
-    with open(filepath, 'r', encoding='utf-8') as f:
+    with open(filepath, encoding='utf-8') as f:
         content = f.read()
     
     # Split by record number pattern (number followed by colon at start)
@@ -1470,7 +1470,7 @@ def read_pubmed_pmid_list(
     pd.DataFrame
         DataFrame with PMID column and default values for other fields.
     """
-    with open(filepath, 'r', encoding='utf-8') as f:
+    with open(filepath, encoding='utf-8') as f:
         pmids = [line.strip() for line in f if line.strip().isdigit()]
     
     df = pd.DataFrame({'PMID': pmids})
@@ -2347,6 +2347,59 @@ def read_scopus_ris(
         df.rename(columns=mapper, inplace=True)
     
     return df
+
+
+# =============================================================================
+# COBISS (Slovenian Co-operative Online Bibliographic System)
+# =============================================================================
+
+"""COBISS personal bibliography readers."""
+
+def read_cobiss_html(
+    filepath: str,
+    *,
+    default_citation_source: str = "wos",
+) -> pd.DataFrame:
+    """
+    Read a COBISS+ personal bibliography HTML report and return a DataFrame.
+
+    The HTML files are typically saved from COBISS+ URLs of the form
+    ``https://bib.cobiss.net/bibliographies/si/webBiblio/bib201_*.html``,
+    which list a researcher's publications grouped by typology
+    (1.01 Original scientific article, 1.02 Review article, ...).
+
+    For direct fetching from a URL, use
+    :func:`biblium.cobiss_api.fetch_personal_bibliography_to_csv`.
+
+    Parameters
+    ----------
+    filepath : str
+        Path to a saved COBISS+ HTML file (or to a plain-text/markdown
+        version of one).
+    default_citation_source : {"wos", "scopus"}, default "wos"
+        Determines which TC value populates the canonical ``Cited by``
+        column. Both raw counts are kept in ``cobiss_wos_*`` and
+        ``cobiss_scopus_*`` regardless.
+
+    Returns
+    -------
+    pd.DataFrame
+        Bibliometric DataFrame with biblium-canonical column names
+        (``Authors``, ``Title``, ``Year``, ``Source title``, ...) plus
+        COBISS-specific columns prefixed with ``cobiss_``.
+
+    Examples
+    --------
+    >>> df = read_cobiss_html("umek_2021_2026.html")
+    >>> df["Document Type"].value_counts()
+    """
+    from biblium.utilsbib_modules.cobiss_parser import (
+        parse_cobiss_html, records_to_dataframe,
+    )
+    records, _meta = parse_cobiss_html(
+        filepath, default_citation_source=default_citation_source,
+    )
+    return records_to_dataframe(records)
 
 
 # =============================================================================
@@ -3567,6 +3620,21 @@ def read_bibfile(
         else:
             raise ValueError(f"Unsupported file format for Scopus: {f_name}")
     
+    # COBISS (Slovenian Co-operative Online Bibliographic System)
+    elif db_lower == "cobiss":
+        if ".csv" in f_name_lower:
+            # Pre-parsed CSV (typically produced by cobiss_api.fetch_personal_bibliography_to_csv)
+            df = pd.read_csv(f_name)
+        elif ".html" in f_name_lower or ".htm" in f_name_lower:
+            df = read_cobiss_html(f_name)
+        else:
+            raise ValueError(
+                f"Unsupported file format for COBISS: {f_name}. "
+                f"Expected .csv (pre-parsed) or .html (raw COBISS+ output). "
+                f"To fetch directly from a COBISS+ URL, use "
+                f"biblium.cobiss_api.fetch_personal_bibliography_to_csv()."
+            )
+    
     # Web of Science
     elif db_lower == "wos" or db_lower == "webofscience":
         if ".txt" in f_name_lower:
@@ -3595,7 +3663,7 @@ def read_bibfile(
             df = read_pubmed_txt(f_name)
         elif ".txt" in f_name_lower:
             # Auto-detect: MEDLINE format vs Summary format vs PMID list
-            with open(f_name, 'r', encoding='utf-8') as f_check:
+            with open(f_name, encoding='utf-8') as f_check:
                 first_lines = f_check.read(500)
             import re
             if re.search(r'^PMID-\s*\d+', first_lines, re.MULTILINE):

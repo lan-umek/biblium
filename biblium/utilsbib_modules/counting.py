@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from collections import Counter
 from itertools import chain
-from typing import Dict, List, Optional, Tuple, Union, Callable, Any
+from typing import Dict, List, Optional, Tuple, Callable
 
 import pandas as pd
 import numpy as np

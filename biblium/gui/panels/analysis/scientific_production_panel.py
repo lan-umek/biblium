@@ -9,15 +9,12 @@ Uses biblium's get_production() and plotbib.plot_timeseries().
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import threading
-import os
-from typing import Dict, List, Optional
 
-from biblium.gui.config import FONTS, LAYOUT, get_theme
-from biblium.gui.core.events import event_bus
+from biblium.gui.config import FONTS
 from biblium.gui.panels.base import BasePanel
 from biblium.gui.widgets.cards import Card
 from biblium.gui.widgets.buttons import ThemedButton, ActionButton
-from biblium.gui.widgets.forms import LabeledCombobox, LabeledSpinbox
+from biblium.gui.widgets.forms import LabeledCombobox
 from biblium.gui.widgets.plots import add_plot_context_menu, make_canvas_resizable
 
 try:
@@ -615,7 +612,7 @@ INTERPRETATION
                 )
                 self.after(0, lambda c=container, r=result: self._show_ai_plot_result(c, r))
             except Exception as e:
-                error_msg = f"Error: {str(e)}"
+                error_msg = f"Error: {e!s}"
                 self.after(0, lambda c=container, msg=error_msg: self._show_ai_plot_result(c, msg))
         
         thread = threading.Thread(target=do_generate, daemon=True)

@@ -25,24 +25,19 @@ Created for integration with the Biblium bibliometric toolkit.
 from __future__ import annotations
 
 import os
-import re
 import time
-import json
 import warnings
-from collections import Counter, defaultdict
+from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple, Set, Union
-from datetime import datetime, timedelta
-from urllib.parse import quote, urlencode
-import hashlib
+from typing import Any, Dict, List, Optional, Tuple
+from datetime import datetime
+from urllib.parse import quote
 
 import numpy as np
 import pandas as pd
 from scipy.stats import percentileofscore, spearmanr, pearsonr
 
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-from matplotlib.colors import Normalize
 import seaborn as sns
 
 # Optional imports for API access
@@ -1091,7 +1086,6 @@ def plot_altmetric_overview(
     """Plot comprehensive altmetric overview."""
     fig, ax = plt.subplots(figsize=figsize)
     ax.grid(False)
-    ax.grid(False)
     
     df = result.summary_df
     
@@ -1183,7 +1177,6 @@ def plot_source_breakdown(
     """Plot breakdown by source for top papers."""
     fig, ax = plt.subplots(figsize=figsize)
     ax.grid(False)
-    ax.grid(False)
     
     df = result.summary_df.nlargest(top_n, "altmetric_score")
     
@@ -1263,7 +1256,7 @@ def plot_source_breakdown(
         available_corr = [c for c in corr_cols if c in result.correlation_matrix.columns]
         corr_subset = result.correlation_matrix.loc[available_corr, available_corr]
         
-        sns.heatmap(corr_subset, annot=True, fmt=".2f", cmap=cmap or CMAP_CONTINUOUS,
+        sns.heatmap(corr_subset, annot=True, fmt=".2f", cmap=CMAP_CONTINUOUS,
                    center=0, ax=ax, cbar_kws={"shrink": 0.8})
         ax.set_title("Correlation Matrix", fontsize=12)
     
@@ -1290,7 +1283,6 @@ def plot_temporal_altmetrics(
         return fig
     
     fig, ax = plt.subplots(figsize=figsize)
-    ax.grid(False)
     ax.grid(False)
     
     df = result.temporal_trends.dropna(subset=["year"])

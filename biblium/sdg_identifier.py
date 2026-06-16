@@ -1,6 +1,5 @@
 import pandas as pd
 import re
-from typing import List, Dict, Tuple, Optional
 
 
 SDG_MAPPINGS = {

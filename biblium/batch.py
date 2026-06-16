@@ -11,12 +11,10 @@ Wraps existing functions to process data in chunks.
 from __future__ import annotations
 
 import gc
-import warnings
-from typing import Any, Callable, Dict, Generator, List, Optional, Union, Iterable
+from typing import Any, Callable, Dict, Generator, List, Union
 from functools import wraps
 
 import pandas as pd
-import numpy as np
 
 # Progress bar support
 try:

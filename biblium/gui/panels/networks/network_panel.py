@@ -10,16 +10,15 @@ Uses Biblium's built-in network methods for consistency.
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import threading
-from typing import Dict, Optional
+from typing import Dict
 
-from biblium.gui.config import FONTS, LAYOUT, get_theme, NETWORK_TYPES, NETWORK_LAYOUTS, COMMUNITY_ALGORITHMS, COLOR_PALETTES
+from biblium.gui.config import FONTS, NETWORK_TYPES, NETWORK_LAYOUTS, COMMUNITY_ALGORITHMS, COLOR_PALETTES
 from biblium.gui.core.events import event_bus, EventBus
 from biblium.gui.panels.base import BasePanel
 from biblium.gui.widgets.cards import Card, CollapsibleCard, StatsCard, CardGrid
 from biblium.gui.widgets.buttons import ThemedButton, ActionButton
-from biblium.gui.widgets.forms import LabeledCombobox, LabeledCheckbox, LabeledSpinbox, LabeledEntry, DualListSelector
+from biblium.gui.widgets.forms import LabeledCombobox, LabeledCheckbox, LabeledSpinbox
 from biblium.gui.widgets.tables import DataTable
-from biblium.gui.widgets.plots import PlotFrame
 
 try:
     import pandas as pd
@@ -340,14 +339,13 @@ class NetworkPanel(BasePanel):
     
     def _load_include_file(self):
         """Load include entities from file."""
-        import re
         filepath = filedialog.askopenfilename(
             title="Load Include List",
             filetypes=[("Text files", "*.txt"), ("CSV files", "*.csv"), ("All files", "*.*")],
         )
         if filepath:
             try:
-                with open(filepath, 'r', encoding='utf-8') as f:
+                with open(filepath, encoding='utf-8') as f:
                     items = [line.strip() for line in f if line.strip()]
                 self._include_items = set(items)
                 self.include_entry.delete(0, tk.END)
@@ -358,14 +356,13 @@ class NetworkPanel(BasePanel):
     
     def _load_exclude_file(self):
         """Load exclude entities from file."""
-        import re
         filepath = filedialog.askopenfilename(
             title="Load Exclude List",
             filetypes=[("Text files", "*.txt"), ("CSV files", "*.csv"), ("All files", "*.*")],
         )
         if filepath:
             try:
-                with open(filepath, 'r', encoding='utf-8') as f:
+                with open(filepath, encoding='utf-8') as f:
                     items = [line.strip() for line in f if line.strip()]
                 self._exclude_items = set(items)
                 self.exclude_entry.delete(0, tk.END)
@@ -704,7 +701,6 @@ class NetworkPanel(BasePanel):
     
     def _build_coupling_network(self, top_n: int, min_coupling: int) -> nx.Graph:
         """Build bibliographic coupling network."""
-        from collections import Counter, defaultdict
         
         ref_col = None
         for col_name in ["References", "Cited References", "references"]:
@@ -754,7 +750,7 @@ class NetworkPanel(BasePanel):
     def _build_keyword_network(self, top_n: int, min_cooccur: int, kind: str = "author") -> nx.Graph:
         """Build keyword co-occurrence network using biblium's compute_cooccurrence_matrix."""
         from biblium import utilsbib
-        from collections import Counter, defaultdict
+        from collections import defaultdict
         
         # Find keyword column based on kind
         if kind == "author":
@@ -820,7 +816,7 @@ class NetworkPanel(BasePanel):
             freq = cooc_matrix.loc[item, item]
             # Calculate average year for this keyword
             avg_year = 0
-            if item in keyword_years and keyword_years[item]:
+            if keyword_years.get(item):
                 avg_year = sum(keyword_years[item]) / len(keyword_years[item])
             G.add_node(item, frequency=freq, label=item, avg_year=avg_year)
         
@@ -1013,7 +1009,6 @@ class NetworkPanel(BasePanel):
     
     def _build_ngrams_network(self, top_n: int, min_cooccur: int, source: str = "title") -> nx.Graph:
         """Build n-grams co-occurrence network from titles or abstracts."""
-        from biblium import utilsbib
         from collections import Counter, defaultdict
         
         # Find source column
@@ -1033,7 +1028,6 @@ class NetworkPanel(BasePanel):
         
         # Extract n-grams (simple approach: bigrams and trigrams)
         import re
-        from collections import Counter
         
         ngram_docs = []
         ngram_count = Counter()
@@ -1306,9 +1300,6 @@ class NetworkPanel(BasePanel):
         import matplotlib
         matplotlib.use('Agg')
         from matplotlib.figure import Figure
-        from matplotlib.backends.backend_agg import FigureCanvasAgg
-        import io
-        from PIL import Image, ImageTk
         
         # Create figure with non-interactive backend
         fig = Figure(figsize=(12, 10), dpi=100)

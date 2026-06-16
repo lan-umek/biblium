@@ -7,15 +7,15 @@ Advanced filtering with multiple rules and conditions.
 
 import tkinter as tk
 from tkinter import ttk, messagebox
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 import threading
 
-from biblium.gui.config import FONTS, LAYOUT, get_theme
+from biblium.gui.config import FONTS, get_theme
 from biblium.gui.core.events import event_bus, EventBus
 from biblium.gui.panels.base import BasePanel
-from biblium.gui.widgets.cards import Card, CollapsibleCard, StatsCard, CardGrid
-from biblium.gui.widgets.buttons import ThemedButton, ActionButton, IconButton
-from biblium.gui.widgets.forms import LabeledCombobox, LabeledEntry, LabeledCheckbox, LabeledSpinbox
+from biblium.gui.widgets.cards import Card, StatsCard, CardGrid
+from biblium.gui.widgets.buttons import ThemedButton, ActionButton
+from biblium.gui.widgets.forms import LabeledCombobox, LabeledCheckbox, LabeledSpinbox
 from biblium.gui.widgets.tables import DataTable
 
 try:
@@ -653,8 +653,7 @@ class FilterPanel(BasePanel):
                 
                 self.after(0, lambda: self._on_filter_success(df, original_count, filtered_count))
             except Exception as e:
-                import traceback
-                self.after(0, lambda: self._on_filter_error(str(e)))
+                self.after(0, lambda msg=str(e): self._on_filter_error(msg))
         
         threading.Thread(target=do_filter, daemon=True).start()
     

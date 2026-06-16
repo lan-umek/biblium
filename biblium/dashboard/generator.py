@@ -8,10 +8,11 @@ Creates standalone interactive HTML dashboards using Bokeh.
 from __future__ import annotations
 
 import json
+from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -93,7 +94,7 @@ class Dashboard:
     
     def __init__(
         self,
-        biblio: "BiblioStats",
+        biblio: BiblioStats,
         config: Optional[DashboardConfig] = None,
     ):
         self.biblio = biblio
@@ -613,7 +614,6 @@ class Dashboard:
         year_counts = years.value_counts().sort_index()
         chart_data = [{"year": int(y), "count": int(c)} for y, c in year_counts.items()]
         
-        import json
         chart_data_json = json.dumps(chart_data)
         
         return f"""
@@ -1011,7 +1011,6 @@ class Dashboard:
         """Build word cloud section from keywords, titles, or abstracts."""
         try:
             from collections import Counter
-            import json
             import re
             
             b = self.biblio
@@ -1166,7 +1165,6 @@ class Dashboard:
             from bokeh.models import ColumnDataSource, HoverTool, Legend
             from bokeh.palettes import Category10
             from collections import defaultdict, Counter
-            import json
             
             b = self.biblio
             
@@ -1528,7 +1526,7 @@ class Dashboard:
         try:
             from bokeh.plotting import figure
             from bokeh.embed import components
-            from bokeh.models import ColumnDataSource, HoverTool, LabelSet
+            from bokeh.models import ColumnDataSource, HoverTool
             import networkx as nx
             from collections import defaultdict, Counter
             
@@ -1801,10 +1799,8 @@ class Dashboard:
         from bokeh.plotting import figure
         from bokeh.embed import components
         from bokeh.models import (
-            ColumnDataSource, HoverTool, Select, CustomJS,
-            ColorBar, LinearColorMapper
+            ColumnDataSource, HoverTool, ColorBar, LinearColorMapper
         )
-        from bokeh.layouts import column, row
         from bokeh.palettes import Viridis256
         
         # Identify available numeric columns
@@ -2182,13 +2178,11 @@ class Dashboard:
         """Build keyword co-occurrence network section."""
         try:
             # Try to build co-occurrence network
-            from bokeh.plotting import figure, from_networkx
+            from bokeh.plotting import figure
             from bokeh.embed import components
             from bokeh.models import (
-                ColumnDataSource, HoverTool, Circle, MultiLine,
-                NodesAndLinkedEdges, EdgesAndLinkedNodes
+                ColumnDataSource, HoverTool
             )
-            from bokeh.palettes import Spectral8
             import networkx as nx
             
             # Get keyword column

@@ -4418,6 +4418,11 @@ def preprocess_keywords(
         s = _fold_accents(s)
         s = _normalize_compounds(s)
         s = _strip_punct(s)
+        # _strip_punct trims a trailing ')' but leaves the matching '(',
+        # producing malformed keywords like 'generative ai (genai'.
+        # Re-balance so parenthetical acronyms stay intact, consistent
+        # with count_occurrences / plot_items_production_over_time.
+        s = _balance_closing_parenthesis(s)
         s = re.sub(r"\s+", " ", s).strip()
         return s
 
@@ -4638,10 +4643,12 @@ def process_text_column(
             # Legacy: single-sheet workbook
             base_sw = _extract_sw_from_df(sheets)
     else:
+        # Lazy-load NLTK stopwords corpus on demand (avoids hard dependency at import).
+        from nltk.corpus import stopwords as _sw_corpus
         try:
-            base_sw = [w.lower() for w in stopwords.words(lang)]
+            base_sw = [w.lower() for w in _sw_corpus.words(lang)]
         except OSError:
-            base_sw = [w.lower() for w in stopwords.words("english")]
+            base_sw = [w.lower() for w in _sw_corpus.words("english")]
 
     # ---- merge extra stopwords (logic unchanged)
     extra_sw: list[str] = []
@@ -7163,7 +7170,14 @@ def get_performance_indicators(
     if ci is not None:
         indicators += [("Collaboration index", ci)]
 
-    rng = last_publication_year(df) - first_publication_year(df) + 1
+    _first_y = first_publication_year(df)
+    _last_y = last_publication_year(df)
+    if _first_y is None or _last_y is None:
+        rng = len(df) if len(df) else 1
+    else:
+        rng = (_last_y - _first_y) + 1
+    if not rng or rng <= 0:
+        rng = 1
 
     indicators += [("Documents per active year", len(df) / rng),
                    ("Citations per active year", total_citations(df) / rng)]
@@ -7314,6 +7328,8 @@ def select_documents(
     separator="; ",
     value_type="string",
     text_norm="tfidf",
+    compute_fractional=True,
+    compute_text_norms=True,
 ):
     """
     Select documents containing given entities and optionally compute
@@ -7495,7 +7511,9 @@ def select_documents(
     indicators_dict["binary"] = indicator_01
 
     # Fractional indicators for list-type values
-    if value_type == "list":
+    # SPEEDUP: skip when caller doesn't need them (e.g. compute_cooccurrence
+    # only uses 'binary'). On 90k+ docs × 100+ items this saves several minutes.
+    if value_type == "list" and compute_fractional:
         indicator_frac = pd.DataFrame(0.0, index=df.index, columns=items_of_interest)
         for idx, val in df[col].items():
             if pd.isna(val):
@@ -7519,7 +7537,7 @@ def select_documents(
         indicators_dict["fractional"] = indicator_frac
 
     # Text-based counts and normalizations
-    if value_type == "text":
+    if value_type == "text" and compute_text_norms:
         count_df = pd.DataFrame(0.0, index=df.index, columns=items_of_interest)
         lower_items = {item: item.lower() for item in items_of_interest}
 
@@ -11592,6 +11610,17 @@ def build_document_term_matrix(
     Build a document-term matrix with optional TF-IDF, n-grams, and lemmatization/POS filtering.
     """
     texts = df[field].fillna("")
+    # Lazy-load spaCy pipeline only when lemmatization is requested.
+    nlp = None
+    if use_lemmatization:
+        try:
+            import spacy
+            try:
+                nlp = spacy.load("en_core_web_sm")
+            except (OSError, IOError):
+                nlp = None  # model not installed; fall back to raw tokens
+        except ImportError:
+            nlp = None
     processed_texts = []
     for doc in texts:
         if use_lemmatization and nlp is not None:
@@ -12450,6 +12479,7 @@ def cluster_by_coupling(
     :param n_clusters: Number of clusters.
     :return: Array of cluster labels.
     """
+    from scipy.sparse import linalg as spla  # local import to avoid hard dep at module load
 
     eigenvalues, eigenvectors = spla.eigs(coupling_mat, k=n_clusters + 1, which="SR")
     L = eigenvectors.real[:, 1:]
@@ -14531,6 +14561,7 @@ def build_openalex_citation_network(
     drop_self_loops: bool = True,
     deduplicate: bool = True,
     keep_largest_component: bool = True,
+    drop_year_violations: Literal[None, 'strict', 'all_cycles'] = 'strict',
     path_base: Optional[str] = None,
     save_formats: Iterable[Literal['csv', 'graphml', 'pajek']] = ('csv',),
     verbose: bool = False,
@@ -14691,14 +14722,60 @@ def build_openalex_citation_network(
     if deduplicate:
         edges = edges.drop_duplicates(["citing", "cited"])
 
+    # --- Drop year-violating edges (OpenAlex preprint/journal duplicates
+    # frequently produce 2-cycles W1↔W2 where one direction is impossible).
+    # 'strict' : drop edges where citing.year < cited.year (a paper cannot
+    #            cite a paper from the future)
+    # 'all_cycles' : 'strict' PLUS drop both directions of any remaining
+    #                2-cycle with equal years (ambiguous; preserves DAG)
+    n_dropped_strict = 0
+    n_dropped_cycles = 0
+    if drop_year_violations is not None and len(edges) > 0:
+        year_lookup = {nid: d.get('year', 0) for nid, d in id_to_data.items()}
+
+        def _year(nid):
+            y = year_lookup.get(nid, 0)
+            return y if y else 0
+
+        edges["citing_year"] = edges["citing"].map(_year)
+        edges["cited_year"] = edges["cited"].map(_year)
+        # Strict: citing must be >= cited in year (citing can be same year
+        # or later — same year is OK; future-to-past direction is impossible)
+        mask_strict_ok = (edges["citing_year"] == 0) | (edges["cited_year"] == 0) \
+                        | (edges["citing_year"] >= edges["cited_year"])
+        n_dropped_strict = int((~mask_strict_ok).sum())
+        edges = edges[mask_strict_ok].drop(columns=["citing_year", "cited_year"])
+
+        if drop_year_violations == 'all_cycles' and len(edges) > 0:
+            # Find remaining 2-cycles (A→B and B→A both present), all with
+            # equal years (since strict already removed unequal pairs).
+            pairs = set(zip(edges["citing"], edges["cited"]))
+            twocycle_edges = set()
+            for (a, b) in pairs:
+                if (b, a) in pairs:
+                    # Symmetric — drop both
+                    twocycle_edges.add((a, b))
+                    twocycle_edges.add((b, a))
+            n_dropped_cycles = len(twocycle_edges)
+            if twocycle_edges:
+                mask_keep = ~edges.apply(
+                    lambda r: (r["citing"], r["cited"]) in twocycle_edges, axis=1)
+                edges = edges[mask_keep]
+
     # Build graph with node attributes
     G = nx.DiGraph()
-    
+
     for node_id in id_set:
         data = id_to_data.get(node_id, {'title': node_id, 'year': 2000, 'citations': 0})
         G.add_node(node_id, **data)
-    
+
     G.add_edges_from(edges.itertuples(index=False, name=None))
+
+    if verbose and drop_year_violations is not None:
+        print(f"  Dropped {n_dropped_strict} year-violating edges "
+              f"(citing year < cited year)")
+        if drop_year_violations == 'all_cycles':
+            print(f"  Dropped {n_dropped_cycles} same-year 2-cycle edges")
 
     if verbose:
         print(f"  Total references: {total_refs}")

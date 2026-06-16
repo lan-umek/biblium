@@ -29,9 +29,9 @@ Aggregation levels:
 from __future__ import annotations
 
 import os
-import warnings
 from collections import defaultdict
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
+import re
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import numpy as np
 import pandas as pd
@@ -55,16 +55,32 @@ except ImportError:
 # CITATION NETWORK BUILDING
 # =============================================================================
 
+_DOI_RE = re.compile(r"10\.\d{4,9}/\S+", re.IGNORECASE)
+
+
+def _extract_doi(s: str) -> Optional[str]:
+    """Extract the FIRST DOI substring from arbitrary text. Returns lowercased
+    DOI without trailing punctuation, or None."""
+    if not s:
+        return None
+    m = _DOI_RE.search(s)
+    if not m:
+        return None
+    doi = m.group(0).strip().rstrip(".,;)").lower()
+    return doi if doi else None
+
+
 def build_citation_network_from_refs(
     df: pd.DataFrame,
     id_col: str = "unique-id",
     refs_col: str = "References",
     sep: str = "; ",
     normalize_ids: bool = True,
+    extract_doi: bool = True,
 ) -> Dict[str, Set[str]]:
     """
     Build citation network from references column.
-    
+
     Parameters
     ----------
     df : pd.DataFrame
@@ -77,37 +93,55 @@ def build_citation_network_from_refs(
         Separator for parsing references.
     normalize_ids : bool
         Whether to normalize IDs (lowercase, strip).
-    
+    extract_doi : bool, default True
+        If True (recommended for Scopus/WoS): extract DOI substring from each
+        reference and use that as the key. Without DOI extraction, full
+        citation strings ("Author, A. Year. Title…") never match document IDs
+        (which are DOIs/EIDs), so the network has 0 internal citations.
+
     Returns
     -------
     Dict[str, Set[str]]
         Dictionary mapping paper_id -> set of paper_ids it cites.
     """
     network = {}
-    
+
     for _, row in df.iterrows():
-        doc_id = str(row.get(id_col, ""))
-        if not doc_id or doc_id == "nan":
+        raw_id = str(row.get(id_col, ""))
+        if not raw_id or raw_id == "nan":
             continue
-            
+
+        # Document key: extract DOI from id_col value (covers id_col="DOI" or
+        # id_col="References"-like fields). For EID values this just leaves
+        # them as-is.
+        if extract_doi:
+            doi = _extract_doi(raw_id)
+            doc_id = doi if doi else raw_id
+        else:
+            doc_id = raw_id
         if normalize_ids:
             doc_id = doc_id.strip().lower()
-        
+
         refs_str = row.get(refs_col, "")
         if pd.isna(refs_str) or not refs_str:
             network[doc_id] = set()
             continue
-        
+
         refs = set()
         for ref in str(refs_str).split(sep):
             ref = ref.strip()
-            if ref and ref != "nan":
-                if normalize_ids:
-                    ref = ref.lower()
-                refs.add(ref)
-        
+            if not ref or ref == "nan":
+                continue
+            if extract_doi:
+                d = _extract_doi(ref)
+                if d:
+                    refs.add(d)
+                # if no DOI extracted, skip — we cannot match this ref anyway
+            else:
+                refs.add(ref.lower() if normalize_ids else ref)
+
         network[doc_id] = refs
-    
+
     return network
 
 

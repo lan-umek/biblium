@@ -8,9 +8,9 @@ Statistical analysis with scatter plots and bar charts for bibliometric data.
 import tkinter as tk
 from tkinter import ttk, messagebox
 import threading
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
-from biblium.gui.config import FONTS, LAYOUT, get_theme, ENTITY_TYPES
+from biblium.gui.config import FONTS
 from biblium.gui.core.events import event_bus, EventBus
 from biblium.gui.panels.base import BasePanel
 from biblium.gui.widgets.cards import Card, CollapsibleCard, StatsCard, CardGrid
@@ -830,7 +830,7 @@ class StatisticsPanel(BasePanel):
             
             if ext == "txt":
                 # Plain text - one item per line
-                with open(filepath, "r", encoding="utf-8") as f:
+                with open(filepath, encoding="utf-8") as f:
                     lines = [line.strip() for line in f if line.strip()]
                     if skip_header and len(lines) > 1:
                         items = lines[1:]
@@ -871,7 +871,7 @@ class StatisticsPanel(BasePanel):
                 
         except Exception as e:
             from tkinter import messagebox
-            messagebox.showerror("Error", f"Failed to load file:\n{str(e)}")
+            messagebox.showerror("Error", f"Failed to load file:\n{e!s}")
             return []
         
         return items
@@ -2229,7 +2229,7 @@ INTERPRETATION
                 )
                 self.after(0, lambda r=result_text: self._show_ai_result(r, container))
             except Exception as e:
-                error_msg = f"Error: {str(e)}"
+                error_msg = f"Error: {e!s}"
                 self.after(0, lambda msg=error_msg: self._show_ai_result(msg, container))
         
         thread = threading.Thread(target=do_generate, daemon=True)

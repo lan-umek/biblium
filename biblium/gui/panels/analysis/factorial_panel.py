@@ -9,16 +9,14 @@ Uses biblium's plotbib functions for Word Map, Topic Dendrogram, etc.
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import threading
-from typing import Dict, Optional, List, Tuple
 import io
-import os
 
-from biblium.gui.config import FONTS, LAYOUT, get_theme
+from biblium.gui.config import FONTS
 from biblium.gui.core.events import event_bus, EventBus
 from biblium.gui.panels.base import BasePanel
 from biblium.gui.widgets.cards import Card
 from biblium.gui.widgets.buttons import ThemedButton, ActionButton
-from biblium.gui.widgets.forms import LabeledCombobox, LabeledSpinbox, LabeledCheckbox, LabeledEntry
+from biblium.gui.widgets.forms import LabeledCombobox, LabeledSpinbox, LabeledCheckbox
 
 try:
     import pandas as pd
@@ -360,8 +358,6 @@ class FactorialPanel(BasePanel):
     def _create_visualization(self, result, params):
         """Create visualization using biblium's plotting style."""
         from biblium import utilsbib
-        from scipy.cluster.hierarchy import linkage, dendrogram
-        import seaborn as sns
         
         plt.ioff()
         

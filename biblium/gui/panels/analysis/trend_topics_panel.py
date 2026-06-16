@@ -8,16 +8,12 @@ Analyze trending topics over time using median year ordering.
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import threading
-import os
-from typing import Dict, List, Optional
 
-from biblium.gui.config import FONTS, LAYOUT, get_theme
-from biblium.gui.core.events import event_bus
+from biblium.gui.config import FONTS
 from biblium.gui.panels.base import BasePanel
 from biblium.gui.widgets.cards import Card
 from biblium.gui.widgets.buttons import ThemedButton, ActionButton
-from biblium.gui.widgets.forms import LabeledCombobox, LabeledSpinbox, LabeledEntry
-from biblium.gui.widgets.tables import DataTable
+from biblium.gui.widgets.forms import LabeledCombobox, LabeledSpinbox
 
 try:
     import pandas as pd

@@ -6,7 +6,6 @@ Custom themed buttons.
 """
 
 import tkinter as tk
-from tkinter import ttk
 from typing import Callable, Optional, Tuple
 
 from biblium.gui.config import FONTS, get_theme

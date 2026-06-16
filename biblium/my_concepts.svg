@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+  <!-- Folder base -->
+  <path d="M4 12 L4 40 L44 40 L44 16 L22 16 L18 12 Z" fill="#777777" stroke="#555555" stroke-width="1"/>
+  
+  <!-- Folder tab -->
+  <path d="M4 12 L18 12 L22 16 L4 16 Z" fill="#aaaaaa"/>
+  
+  <!-- Document inside folder -->
+  <rect x="12" y="20" width="24" height="16" fill="#404040" stroke="#555555" stroke-width="1" rx="1"/>
+  
+  <!-- Document lines -->
+  <line x1="15" y1="24" x2="33" y2="24" stroke="#555555" stroke-width="1"/>
+  <line x1="15" y1="27" x2="30" y2="27" stroke="#555555" stroke-width="1"/>
+  <line x1="15" y1="30" x2="33" y2="30" stroke="#555555" stroke-width="1"/>
+  <line x1="15" y1="33" x2="27" y2="33" stroke="#555555" stroke-width="1"/>
+  
+  <!-- Checkmark badge -->
+  <circle cx="38" cy="10" r="8" fill="#777777" stroke="#555555" stroke-width="1"/>
+  <polyline points="33,10 36,13 43,6" fill="none" stroke="#404040" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  
+  <!-- Concept tag indicators -->
+  <circle cx="10" cy="28" r="3" fill="#777777"/>
+  <circle cx="10" cy="34" r="3" fill="#777777"/>
+</svg>

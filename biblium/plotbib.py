@@ -7,7 +7,6 @@ import itertools
 import textwrap
 import re
 from collections import Counter, defaultdict
-from datetime import datetime
 import warnings
 
 # --- Typing ---
@@ -833,6 +832,7 @@ def plot_timeseries(
     bar_y="Number of Documents",
     line_y="Cumulative Citations",
     cut_year=None,
+    exclude_last_years=0,
     filename="timeseries_plot",
     dpi=600,
     axis_labelsize=None,
@@ -857,6 +857,10 @@ def plot_timeseries(
         Column to plot as a line. Use None to disable line.
     cut_year : int or None, default None
         If provided, groups all rows with x < cut_year into a single category.
+    exclude_last_years : int, default 0
+        If > 0, drop the trailing N rows after sorting by `x`. Typically used
+        to omit the current/incomplete year (e.g. 2026 in a 1969-2026 dataset).
+        Applied AFTER cut_year aggregation, so the "before YYYY" bar is kept.
     filename : str, default "timeseries_plot"
         Base filename for saving.
     dpi : int, default 600
@@ -899,6 +903,13 @@ def plot_timeseries(
             df_plot = after_df
     else:
         df_plot = df_copy.sort_values(by=x)
+
+    # Drop trailing N rows (e.g., the current/incomplete year)
+    if exclude_last_years and exclude_last_years > 0:
+        if exclude_last_years >= len(df_plot):
+            df_plot = df_plot.iloc[:0]
+        else:
+            df_plot = df_plot.iloc[:-exclude_last_years]
 
     # ---- Plot
     fig, ax1 = plt.subplots(figsize=(12, 6))
@@ -2109,7 +2120,8 @@ def plot_collaboration_types(
 def plot_heatmap(df, filename="heatmap", dpi=600, show=True, normalized=False, cmap="viridis",
                  axis_labelsize=None, cbar_label=None, wrap_width=50, square_cells=None,
                  symmetric_option=None, label_fontsize=10, tick_labelsize=10, cbar_labelsize=10,
-                 xlabel=None, ylabel=None):
+                 xlabel=None, ylabel=None, ax=None, annotate=True, title=None,
+                 linewidths=0.0):
     """
     Plot a heatmap showing the relationship between two categories, with optional colorbar label. Optionally enforce square aspect ratio.
 
@@ -2133,8 +2145,21 @@ def plot_heatmap(df, filename="heatmap", dpi=600, show=True, normalized=False, c
     """
 
 
-    fig, ax = plt.subplots(figsize=(10, 8))
-    
+    n_rows, n_cols = df.shape
+    # Adaptivna velikost figure in pisave glede na velikost matrike.
+    fig_w = max(8.0, min(26.0, 0.55 * n_cols + 3.0))
+    fig_h = max(6.0, min(24.0, 0.55 * n_rows + 3.0))
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(fig_w, fig_h))
+        _externally_supplied_ax = False
+    else:
+        fig = ax.figure
+        _externally_supplied_ax = True
+    _big = max(n_rows, n_cols)
+    if _big > 15:
+        _scale = 15.0 / _big
+        label_fontsize = max(5.0, label_fontsize * _scale)
+        tick_labelsize = max(6.0, tick_labelsize * _scale)
 
     fmt = ".2f" if normalized else ".0f"
 
@@ -2147,10 +2172,10 @@ def plot_heatmap(df, filename="heatmap", dpi=600, show=True, normalized=False, c
     if symmetric_option == "mask" and df.shape[0] == df.shape[1] and (df.columns == df.index).all():
         mask = np.triu(np.ones_like(df.values, dtype=bool))
 
-    sns.heatmap(df, annot=True, fmt=fmt, cmap=cmap, cbar=True, ax=ax,
+    sns.heatmap(df, annot=annotate, fmt=fmt, cmap=cmap, cbar=True, ax=ax,
                 annot_kws={"fontsize": label_fontsize},
                 cbar_kws={"label": cbar_label, "format": None} if cbar_label else {},
-                square=auto_square, mask=mask)
+                square=auto_square, mask=mask, linewidths=linewidths)
 
     if symmetric_option == "highlight" and df.shape[0] == df.shape[1] and (df.columns == df.index).all():
         for i in range(len(df)):
@@ -2169,11 +2194,15 @@ def plot_heatmap(df, filename="heatmap", dpi=600, show=True, normalized=False, c
         if cbar_label:
             ax.collections[0].colorbar.set_label(cbar_label, fontsize=cbar_labelsize)
     ax.set_ylabel(df.index.name or "", fontsize=axis_labelsize)
-    plt.tight_layout()
-    save_plot(filename, dpi=dpi)
-    if show:
-        plt.show()
-    plt.close()
+    if title is not None:
+        ax.set_title(title)
+    ax.grid(False)
+    if not _externally_supplied_ax:
+        plt.tight_layout()
+        save_plot(filename, dpi=dpi)
+        if show:
+            plt.show()
+        plt.close()
 
 
 def plot_clustermap(df, filename="clustermap", dpi=600, normalized=False, cmap="viridis",
@@ -3385,7 +3414,7 @@ def plot_group_intersection_network(
     dpi: int = 600,
     show: bool = True,
     save_results: bool = True,
-    figsize: tuple = (10, 8),
+    figsize: tuple = None,
     layout: str = "spring",
     show_edge_labels: bool = True,
     font_size: int = 10,
@@ -3501,6 +3530,17 @@ def plot_group_intersection_network(
                 if sim > actual_threshold:
                     G.add_edge(g1, g2, weight=sim)
     
+    # Odstrani izolirana vozlišča (brez povezav) — ne prikazujemo jih
+    G.remove_nodes_from(list(nx.isolates(G)))
+    
+    # Adaptivna velikost figure in pisave glede na število vozlišč
+    n_nodes = G.number_of_nodes()
+    if figsize is None:
+        figsize = (max(12.0, min(24.0, n_nodes * 0.85)),
+                   max(9.0, min(18.0, n_nodes * 0.62)))
+    if n_nodes > 12:
+        font_size = max(6.0, font_size * 12.0 / n_nodes)
+    
     # Setup figure
     fig, ax = plt.subplots(figsize=figsize)
     
@@ -3516,12 +3556,8 @@ def plot_group_intersection_network(
     else:
         pos = nx.spring_layout(G, seed=42)
     
-    # Node colors
-    if group_color:
-        node_colors = [group_color.get(g, "#1f77b4") for g in G.nodes()]
-    else:
-        cmap = plt.cm.tab10
-        node_colors = [cmap(i % 10) for i in range(len(G.nodes()))]
+    # Node colors — enotna barva za vsa vozlišča (brez razlikovalnega barvanja)
+    node_colors = "#4C72B0"
     
     # Node sizes based on group size
     max_size = max(group_sizes.values()) if group_sizes else 1
@@ -3546,9 +3582,17 @@ def plot_group_intersection_network(
         nx.draw_networkx_edges(G, pos, ax=ax, width=edge_widths, 
                                alpha=0.6, edge_color="gray")
     
-    # Node labels with size info
-    labels = {g: f"{g}\n(n={group_sizes[g]})" for g in G.nodes()}
-    nx.draw_networkx_labels(G, pos, labels, ax=ax, font_size=font_size)
+    # Node labels: ime + delež dokumentov (% zaokroženo na celo število)
+    _total_docs = len(group_matrix) if len(group_matrix) else 1
+    labels = {g: f"{g}\n({round(100 * group_sizes[g] / _total_docs)}%)"
+              for g in G.nodes()}
+    # Oznako postavimo tik nad vozlišče (ne čezenj), da je jasno, katera sodi kam
+    _coords = np.array(list(pos.values())) if pos else np.zeros((1, 2))
+    _span = float((_coords.max(axis=0) - _coords.min(axis=0)).max()) or 1.0
+    _off = 0.04 * _span
+    pos_labels = {_n: (_x, _y + _off) for _n, (_x, _y) in pos.items()}
+    nx.draw_networkx_labels(G, pos_labels, labels, ax=ax, font_size=font_size,
+                            verticalalignment="bottom")
     
     # Edge labels (similarity values)
     if show_edge_labels and G.edges():
@@ -3569,6 +3613,7 @@ def plot_group_intersection_network(
         ax.set_title(f"Group Intersection Network ({method_labels.get(method, method)})", 
                      fontsize=font_size + 4)
     
+    ax.margins(0.18)  # prostor za navzven odmaknjene oznake
     ax.axis("off")
     plt.tight_layout()
     
@@ -3731,6 +3776,7 @@ def plot_group_dendrogram(group_matrix: pd.DataFrame, method: str = "average", m
     fig, ax = plt.subplots(figsize=(10, 6))
     sch.dendrogram(linkage, labels=group_matrix.columns.tolist(), leaf_rotation=90, leaf_font_size=10, ax=ax)
 
+    ax.grid(False)  # brez pomožnih črt
     ax.set_ylabel("Distance")
     if title:
         ax.set_title(title)
@@ -4039,6 +4085,7 @@ def plot_top_country_pairs(matrix_df, top_n=20, figsize=(10, 6), filename_base=N
     plt.xlabel("Collaboration Count")
     plt.title(f"Top Country Collaborations (≥ Top {top_n} with ties)")
     plt.gca().invert_yaxis()
+    plt.gca().grid(False)  # no grid lines (memory rule)
     plt.tight_layout()
 
     if filename_base:
@@ -4158,8 +4205,9 @@ def plot_group_dot_grid(df,
         size = group_df["_dot_size"]
         color = (group_df[color_column] if color_column else "tab:blue")
         ax.plot(x, y, color="black", linewidth=0.5, zorder=1)
+        # biblium scatter style v2: thin white edge instead of heavy black border
         ax.scatter(x, y, s=size, c=(cmap_instance(norm(color)) if color_column else color), cmap=cmap,
-                   norm=norm, edgecolors="black", zorder=2)
+                   norm=norm, edgecolors="white", linewidths=0.3, zorder=2)
 
     # Y ticks and labels
     y_labels = group_order
@@ -4292,10 +4340,11 @@ def dplot_item_timelines(
     for i, row in grouped.iterrows():
         if pd.notnull(row.get("Q1 year")) and pd.notnull(row.get("Q3 year")):
             ax.plot([row["Q1 year"], row["Q3 year"]], [row["y_pos"]] * 2, color="gray", linewidth=1)
+        # biblium scatter style v2: thin white edge (no heavy borders)
         ax.scatter(row["Median year"], row["y_pos"],
                    s=sizes[i],
                    color=colors[i],
-                   edgecolor="black")
+                   edgecolor="white", linewidths=0.3)
 
     ax.set_yticks(grouped["y_pos"])
     ax.set_yticklabels(grouped[item_col], fontsize=tick_fontsize)
@@ -4394,7 +4443,6 @@ def plot_topic_visualization(
     (fig, ax)
     """
 
-    from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
     import matplotlib.cm as cm
     import matplotlib.colors as mcolors
@@ -5851,9 +5899,10 @@ def plot_topic_evolution_alluvial(
     # Draw topic nodes
     for period_idx, period in enumerate(periods):
         for topic in all_topics:
-            ax.scatter(period_idx, topic_y[topic], 
-                      s=200, color=topic_colors[topic], 
-                      edgecolor='black', linewidth=1, zorder=5)
+            # biblium scatter style v2: thin white edge
+            ax.scatter(period_idx, topic_y[topic],
+                      s=200, color=topic_colors[topic],
+                      edgecolor='white', linewidth=0.3, zorder=5)
     
     ax.set_xticks(range(len(periods)))
     ax.set_xticklabels(periods)
@@ -5966,10 +6015,11 @@ def plot_term_evolution(
     plot_type: str = 'heatmap',
     save_path: Optional[str] = None,
     dpi: int = 600,
+    normalize: Optional[str] = "row",
 ) -> Tuple[plt.Figure, plt.Axes]:
     """
     Plot term frequency evolution over time.
-    
+
     Parameters
     ----------
     term_evolution_df : pd.DataFrame
@@ -5988,39 +6038,66 @@ def plot_term_evolution(
         Path to save figure.
     dpi : int
         DPI for saving.
-    
+    normalize : {None, "row", "column"}, optional
+        For heatmaps only. ``"row"`` (default) rescales each term to sum to
+        100 (% share within term across periods), giving a year-share view
+        that is comparable across very different term frequencies.
+        ``"column"`` rescales each period to 100. ``None`` shows raw
+        Frequency values.
+
     Returns
     -------
     (fig, ax)
     """
     fig, ax = plt.subplots(figsize=figsize)
-    
+
     if term_evolution_df.empty:
         ax.text(0.5, 0.5, "No term evolution data", ha='center', va='center')
         return fig, ax
-    
+
     # Get top terms by average frequency
     term_avg = term_evolution_df.groupby('Term')['Frequency'].mean()
     top_terms = term_avg.nlargest(top_n).index.tolist()
-    
+
     # Filter to top terms
     df_filtered = term_evolution_df[term_evolution_df['Term'].isin(top_terms)]
-    
+
     # Pivot for plotting
     pivot = df_filtered.pivot(index='Term', columns='Period', values='Frequency').fillna(0)
-    
+
     # Reorder by average frequency
     pivot = pivot.reindex(top_terms)
-    
+
     if plot_type == 'heatmap':
+        plot_pivot = pivot.copy()
+        cbar_label = 'Relative Frequency'
+        vmin_kw, vmax_kw = None, None
+        if normalize == "row":
+            row_sums = plot_pivot.sum(axis=1).replace(0, np.nan)
+            plot_pivot = plot_pivot.div(row_sums, axis=0) * 100.0
+            plot_pivot = plot_pivot.fillna(0)
+            cbar_label = '% of term-total (row)'
+            vmin_kw, vmax_kw = 0.0, 100.0
+        elif normalize == "column":
+            col_sums = plot_pivot.sum(axis=0).replace(0, np.nan)
+            plot_pivot = plot_pivot.div(col_sums, axis=1) * 100.0
+            plot_pivot = plot_pivot.fillna(0)
+            cbar_label = '% of period-total (column)'
+            vmin_kw, vmax_kw = 0.0, 100.0
+
         sns.heatmap(
-            pivot,
+            plot_pivot,
             cmap=cmap,
-            annot=True if len(pivot.columns) <= 10 else False,
-            fmt='.4f' if pivot.values.max() < 1 else '.0f',
-            cbar_kws={'label': 'Relative Frequency', 'orientation': 'horizontal', 'pad': 0.15},
+            vmin=vmin_kw,
+            vmax=vmax_kw,
+            annot=True if len(plot_pivot.columns) <= 10 else False,
+            fmt='.1f' if normalize else (
+                '.4f' if plot_pivot.values.max() < 1 else '.0f'
+            ),
+            cbar_kws={'label': cbar_label, 'orientation': 'horizontal', 'pad': 0.15},
             ax=ax
         )
+        ax.grid(False)
         ax.set_xlabel("Year")
         ax.set_ylabel("Term")
         ax.set_title(title)
@@ -7121,7 +7198,7 @@ def plot_average_citations_per_year_by_group(
     filename_base: str | None = None,
     save_dpi: int | None = None,
     show: bool = True,
-) -> "Axes":
+) -> Axes:
     """
     Plot per-year average citations for multiple groups with a continuous time axis.
 
@@ -8476,6 +8553,22 @@ def plot_scatter(
             pad_y_min *= 0.9
             pad_y_max *= 1.1
 
+        # extra headroom so adjustText point labels are not clipped
+        if label_col is not None:
+            if y_scale == "log":
+                pad_y_max *= 1.8
+                pad_y_min /= 1.25
+            else:
+                _yr = pad_y_max - pad_y_min
+                pad_y_max += _yr * 0.18
+                pad_y_min -= _yr * 0.05
+            if x_scale == "log":
+                pad_x_max *= 1.30
+                pad_x_min /= 1.15
+            else:
+                _xr = pad_x_max - pad_x_min
+                pad_x_max += _xr * 0.12
+                pad_x_min -= _xr * 0.12
         ax.set_xlim(pad_x_min, pad_x_max)
         ax.set_ylim(pad_y_min, pad_y_max)
 
@@ -9074,24 +9167,24 @@ print("Plots saved: sankey.png, sankey.html")
 def plot_network(
     G,
     # --- coloring by partition / attribute ---
-    partition_attr: "str | None" = None,
-    color_attr: "str | None" = None,
-    cluster_labels: "dict | None" = None,  # {cluster_id: "custom name"}; used in partition legend
+    partition_attr: str | None = None,
+    color_attr: str | None = None,
+    cluster_labels: dict | None = None,  # {cluster_id: "custom name"}; used in partition legend
     # --- sizing ---
-    size_attr: "str | None" = None,
+    size_attr: str | None = None,
     size_scale: float = 350.0,
     fix_max_size: bool = True,
     log_scale: bool = True,  # kept for backward-compat if size_transform is None
-    size_transform: "str | Callable[[float], float] | None" = None,  # "log" | "sqrt" | callable
-    size_vmin: "float | None" = 0.0,
-    size_vmax: "float | None" = None,
+    size_transform: str | Callable[[float], float] | None = None,  # "log" | "sqrt" | callable
+    size_vmin: float | None = 0.0,
+    size_vmax: float | None = None,
     default_node_size: float = 300.0,
     # --- layout / axes ---
     layout: str = "spring",
-    pos: "dict | None" = None,
-    layout_kwargs: "dict | None" = None,
+    pos: dict | None = None,
+    layout_kwargs: dict | None = None,
     ax=None,
-    figsize: "tuple[float, float]" = (8, 6),
+    figsize: tuple[float, float] = (8, 6),
     dpi: int = 300,
     background: str = "#fcfcfc",
     show_frame: bool = False,
@@ -9108,8 +9201,8 @@ def plot_network(
     # --- node colormaps ---
     cmap_name_continuous: str = "viridis",
     cmap_name_discrete: str = "tab10",
-    vmin: "float | None" = None,
-    vmax: "float | None" = None,
+    vmin: float | None = None,
+    vmax: float | None = None,
     max_cat_legend: int = 30,
     # --- edges ---
     edge_alpha: float = 0.6,
@@ -9118,24 +9211,24 @@ def plot_network(
     max_edge_width: float = 4.0,
     edge_curve_rad: float = 0.15,
     curved_edges: bool = True,
-    arrows: "bool | None" = None,  # None → G.is_directed()
-    edge_min_weight: "float | None" = None,
+    arrows: bool | None = None,  # None → G.is_directed()
+    edge_min_weight: float | None = None,
     edge_keep_fraction: float = 1.0,
-    edge_width_percentiles: "tuple[int, int]" = (5, 95),
+    edge_width_percentiles: tuple[int, int] = (5, 95),
     # --- edge colors (optional continuous mapping) ---
-    edge_color_by: "str | None" = None,  # e.g., "weight"; None → blend node colors
+    edge_color_by: str | None = None,  # e.g., "weight"; None → blend node colors
     edge_cmap_name: str = "viridis",
-    edge_vmin: "float | None" = None,
-    edge_vmax: "float | None" = None,
+    edge_vmin: float | None = None,
+    edge_vmax: float | None = None,
     # --- labels ---
-    label_attr: "str | None" = None,  # node attribute to label; default node id
-    label_formatter: "Callable[[str, object, dict], str] | None" = None,
+    label_attr: str | None = None,  # node attribute to label; default node id
+    label_formatter: Callable[[str, object, dict], str] | None = None,
     label_fontsize: float = 12.0,
     label_fontsize_min: float = 7.0,
     label_fontsize_max: float = 18.0,
     label_scale_with_size: bool = True,
     label_min_fraction: float = 0.0,
-    label_top_k: "int | None" = None,
+    label_top_k: int | None = None,
     adjust_labels: bool = True,
     label_halo_color: str = "#ffffff",
     label_halo_width: float = 2.5,
@@ -9144,13 +9237,13 @@ def plot_network(
     legend: bool = True,
     legend_loc: str = "upper right",
     show_colorbar: bool = True,
-    colorbar_kwargs: "dict | None" = None,
+    colorbar_kwargs: dict | None = None,
     # --- export ---
-    filename: "str | None" = None,
+    filename: str | None = None,
     export_format: str = "png",  # "png" | "pdf" | "svg"
     transparent: bool = False,
     **kwargs,
-) -> "tuple":
+) -> tuple:
     """
     "Plot a NetworkX graph with clean defaults, discrete/continuous coloring, robust size transforms,
     better legends, optional adjustText label nudging, and a partition legend titled
@@ -9312,23 +9405,57 @@ def plot_network(
         for n, d in G.nodes(data=True):
             cid = d.get(partition_attr, d.get(f"partition_{partition_attr}", 0))
             comms.setdefault(cid, []).append(n)
+
+        # Cap number of plotted communities so label_propagation / similar
+        # algorithms that fragment into 30+ tiny groups remain readable.
+        # The largest 12 communities keep their colors; the rest are merged
+        # into a single grey "Other" bucket (reviewer feedback B8).
+        max_plot_comms = 12
+        sorted_comms = sorted(comms.items(), key=lambda x: -len(x[1]))
+        kept = sorted_comms[:max_plot_comms]
+        other = sorted_comms[max_plot_comms:]
+
         # palette
-        base = "tab20" if (len(comms) > 10 and cmap_name_discrete == "tab10") else cmap_name_discrete
-        cmap = cm.get_cmap(base, max(len(comms), 1))
+        n_colors = max(len(kept), 1)
+        base = "tab20" if (n_colors > 10 and cmap_name_discrete == "tab10") else cmap_name_discrete
+        cmap = cm.get_cmap(base, n_colors)
         handles = []
-        for i, (cid, members) in enumerate(sorted(comms.items(), key=lambda x: x[0])):
+        # B6/B7: number communities starting at 1 so the legend matches what a
+        # human would expect ("Community 1", "Community 2", ...).
+        for i, (cid, members) in enumerate(kept):
             col = cmap(i)
             for n in members:
                 node_colors[n] = col
-            # use custom labels if provided (manual); else raw id
-            lab = (cluster_labels or {}).get(cid, str(cid))
+            # use custom labels if provided (manual); else "Community N (size)"
+            custom = (cluster_labels or {}).get(cid)
+            if custom is not None:
+                lab = str(custom)
+            else:
+                lab = f"Community {i + 1} (n={len(members)})"
             handles.append(
                 Line2D([0], [0], marker="o", linestyle="", markersize=9,
                        markerfacecolor=col, markeredgecolor=node_outline_color,
                        markeredgewidth=node_outline_width, label=lab)
             )
-        legend_handles = handles
-        legend_title = f"Clusters by {partition_attr}"
+        if other:
+            grey = (0.65, 0.65, 0.65, 1.0)
+            total_other = sum(len(members) for _, members in other)
+            for _, members in other:
+                for n in members:
+                    node_colors[n] = grey
+            handles.append(
+                Line2D([0], [0], marker="o", linestyle="", markersize=9,
+                       markerfacecolor=grey, markeredgecolor=node_outline_color,
+                       markeredgewidth=node_outline_width,
+                       label=f"Other ({len(other)} small comms, n={total_other})")
+            )
+        # B9: if there is only ONE community we suppress the legend (no value).
+        if len(kept) <= 1 and not other:
+            legend_handles = None
+            legend_title = None
+        else:
+            legend_handles = handles
+            legend_title = f"Clusters by {partition_attr}"
 
     # (B) color_attr set → discrete vs continuous
     else:
@@ -9393,7 +9520,7 @@ def plot_network(
         raw_sizes = np.minimum(raw_sizes, float(size_vmax))
 
     # transform
-    def _apply_size_transform(arr: "np.ndarray") -> "np.ndarray":
+    def _apply_size_transform(arr: np.ndarray) -> np.ndarray:
         tr = size_transform
         if tr is None and log_scale:
             tr = "log"
@@ -9912,54 +10039,280 @@ def plot_historiograph(
 
 # specific networks
 
-def plot_country_collab_network(matrix_df, threshold=1, figsize=(12, 12), layout_func="spring", filename_base=None):
-    """
-    Plots a network graph of country collaborations above a threshold.
+# Country → continent mapping (English country names as used by pycountry).
+# Covers ~200 countries. Used by plot_country_collab_network.
+_COUNTRY_TO_CONTINENT = {
+    # Africa
+    "Algeria": "Africa", "Angola": "Africa", "Benin": "Africa",
+    "Botswana": "Africa", "Burkina Faso": "Africa", "Burundi": "Africa",
+    "Cabo Verde": "Africa", "Cape Verde": "Africa",
+    "Cameroon": "Africa", "Central African Republic": "Africa",
+    "Chad": "Africa", "Comoros": "Africa", "Congo": "Africa",
+    "Democratic Republic of the Congo": "Africa", "Côte d'Ivoire": "Africa",
+    "Djibouti": "Africa", "Egypt": "Africa", "Equatorial Guinea": "Africa",
+    "Eritrea": "Africa", "Eswatini": "Africa", "Swaziland": "Africa",
+    "Ethiopia": "Africa", "Gabon": "Africa", "Gambia": "Africa",
+    "Ghana": "Africa", "Guinea": "Africa", "Guinea-Bissau": "Africa",
+    "Kenya": "Africa", "Lesotho": "Africa", "Liberia": "Africa",
+    "Libya": "Africa", "Madagascar": "Africa", "Malawi": "Africa",
+    "Mali": "Africa", "Mauritania": "Africa", "Mauritius": "Africa",
+    "Morocco": "Africa", "Mozambique": "Africa", "Namibia": "Africa",
+    "Niger": "Africa", "Nigeria": "Africa", "Rwanda": "Africa",
+    "Sao Tome and Principe": "Africa", "Senegal": "Africa",
+    "Seychelles": "Africa", "Sierra Leone": "Africa", "Somalia": "Africa",
+    "South Africa": "Africa", "South Sudan": "Africa", "Sudan": "Africa",
+    "Tanzania": "Africa", "United Republic of Tanzania": "Africa",
+    "Togo": "Africa", "Tunisia": "Africa", "Uganda": "Africa",
+    "Zambia": "Africa", "Zimbabwe": "Africa",
+    # Asia
+    "Afghanistan": "Asia", "Armenia": "Asia", "Azerbaijan": "Asia",
+    "Bahrain": "Asia", "Bangladesh": "Asia", "Bhutan": "Asia",
+    "Brunei": "Asia", "Brunei Darussalam": "Asia", "Cambodia": "Asia",
+    "China": "Asia", "Cyprus": "Asia", "Georgia": "Asia",
+    "Hong Kong": "Asia", "India": "Asia", "Indonesia": "Asia",
+    "Iran": "Asia", "Iran, Islamic Republic of": "Asia", "Iraq": "Asia",
+    "Israel": "Asia", "Japan": "Asia", "Jordan": "Asia",
+    "Kazakhstan": "Asia", "Kuwait": "Asia", "Kyrgyzstan": "Asia",
+    "Laos": "Asia", "Lao People's Democratic Republic": "Asia",
+    "Lebanon": "Asia", "Macao": "Asia", "Macau": "Asia",
+    "Malaysia": "Asia", "Maldives": "Asia", "Mongolia": "Asia",
+    "Myanmar": "Asia", "Nepal": "Asia",
+    "North Korea": "Asia", "Korea, Democratic People's Republic of": "Asia",
+    "Oman": "Asia", "Pakistan": "Asia", "Palestine": "Asia",
+    "Palestine, State of": "Asia", "Philippines": "Asia",
+    "Qatar": "Asia", "Saudi Arabia": "Asia", "Singapore": "Asia",
+    "South Korea": "Asia", "Korea, Republic of": "Asia",
+    "Sri Lanka": "Asia", "Syria": "Asia", "Syrian Arab Republic": "Asia",
+    "Taiwan": "Asia", "Taiwan, Province of China": "Asia",
+    "Tajikistan": "Asia", "Thailand": "Asia", "Timor-Leste": "Asia",
+    "Turkey": "Asia", "Türkiye": "Asia",
+    "Turkmenistan": "Asia", "United Arab Emirates": "Asia",
+    "Uzbekistan": "Asia", "Vietnam": "Asia", "Viet Nam": "Asia",
+    "Yemen": "Asia",
+    # Europe
+    "Albania": "Europe", "Andorra": "Europe", "Austria": "Europe",
+    "Belarus": "Europe", "Belgium": "Europe",
+    "Bosnia and Herzegovina": "Europe", "Bulgaria": "Europe",
+    "Croatia": "Europe", "Czechia": "Europe", "Czech Republic": "Europe",
+    "Denmark": "Europe", "Estonia": "Europe", "Finland": "Europe",
+    "France": "Europe", "Germany": "Europe", "Greece": "Europe",
+    "Hungary": "Europe", "Iceland": "Europe", "Ireland": "Europe",
+    "Italy": "Europe", "Kosovo": "Europe", "Latvia": "Europe",
+    "Liechtenstein": "Europe", "Lithuania": "Europe", "Luxembourg": "Europe",
+    "Malta": "Europe", "Moldova": "Europe", "Moldova, Republic of": "Europe",
+    "Monaco": "Europe", "Montenegro": "Europe", "Netherlands": "Europe",
+    "North Macedonia": "Europe", "Macedonia": "Europe", "Norway": "Europe",
+    "Poland": "Europe", "Portugal": "Europe", "Romania": "Europe",
+    "Russia": "Europe", "Russian Federation": "Europe",
+    "San Marino": "Europe", "Serbia": "Europe", "Slovakia": "Europe",
+    "Slovenia": "Europe", "Spain": "Europe", "Sweden": "Europe",
+    "Switzerland": "Europe", "Ukraine": "Europe", "United Kingdom": "Europe",
+    "United Kingdom of Great Britain and Northern Ireland": "Europe",
+    "Vatican City": "Europe", "Holy See (Vatican City State)": "Europe",
+    "Greenland": "Europe",
+    # North America
+    "Antigua and Barbuda": "North America", "Bahamas": "North America",
+    "Barbados": "North America", "Belize": "North America",
+    "Canada": "North America", "Costa Rica": "North America",
+    "Cuba": "North America", "Dominica": "North America",
+    "Dominican Republic": "North America", "El Salvador": "North America",
+    "Grenada": "North America", "Guatemala": "North America",
+    "Haiti": "North America", "Honduras": "North America",
+    "Jamaica": "North America", "Mexico": "North America",
+    "Nicaragua": "North America", "Panama": "North America",
+    "Saint Kitts and Nevis": "North America", "Saint Lucia": "North America",
+    "Saint Vincent and the Grenadines": "North America",
+    "Trinidad and Tobago": "North America", "United States": "North America",
+    "United States of America": "North America",
+    "Puerto Rico": "North America", "Martinique": "North America",
+    "Guadeloupe": "North America", "Curaçao": "North America",
+    # South America
+    "Argentina": "South America", "Bolivia": "South America",
+    "Bolivia, Plurinational State of": "South America",
+    "Brazil": "South America", "Chile": "South America",
+    "Colombia": "South America", "Ecuador": "South America",
+    "Guyana": "South America", "Paraguay": "South America",
+    "Peru": "South America", "Suriname": "South America",
+    "Uruguay": "South America", "Venezuela": "South America",
+    "Venezuela, Bolivarian Republic of": "South America",
+    # Oceania
+    "Australia": "Oceania", "Fiji": "Oceania", "Kiribati": "Oceania",
+    "Marshall Islands": "Oceania", "Micronesia": "Oceania",
+    "Nauru": "Oceania", "New Zealand": "Oceania", "Palau": "Oceania",
+    "Papua New Guinea": "Oceania", "Samoa": "Oceania",
+    "Solomon Islands": "Oceania", "Tonga": "Oceania", "Tuvalu": "Oceania",
+    "Vanuatu": "Oceania", "New Caledonia": "Oceania",
+}
 
-    Parameters:
-    matrix_df (pd.DataFrame): Symmetric collaboration matrix.
-    threshold (int): Minimum collaboration count to include an edge.
-    figsize (tuple): Size of the figure in inches.
-    layout_func (callable): NetworkX layout function (e.g., nx.spring_layout).
-    filename_base (str or None): If provided, saves the plot as PNG, SVG, and PDF using this base name.
+_CONTINENT_COLORS = {
+    "Africa":        "#e76f51",
+    "Asia":          "#f4a261",
+    "Europe":        "#2a9d8f",
+    "North America": "#264653",
+    "South America": "#e9c46a",
+    "Oceania":       "#8338ec",
+    "Other":         "#bdbdbd",
+}
+
+
+def country_to_continent(country: str) -> str:
+    """Vrne celino za podano državo (ali 'Other' če ni v mapping-u)."""
+    return _COUNTRY_TO_CONTINENT.get(str(country).strip(), "Other")
+
+
+def plot_country_collab_network(
+    matrix_df,
+    threshold=1,
+    figsize=(14, 10),
+    layout_func="kamada_kawai",
+    filename_base=None,
+    top_n: int | None = 40,
+    color_by_continent: bool = True,
+    label_fontsize: float = 9,
+    show=False,
+):
     """
+    Plots a network graph of country collaborations.
+
+    Parameters
+    ----------
+    matrix_df : pd.DataFrame
+        Symmetric collaboration matrix (countries × countries).
+    threshold : int, default 1
+        Minimum collaboration count to include an edge.
+    figsize : tuple, default (14, 10)
+    layout_func : {"kamada_kawai", "spring", "circular", "shell"}, default "kamada_kawai"
+    filename_base : str or None
+        If given, saves PNG/SVG/PDF via save_plot.
+    top_n : int, optional
+        Keep only top N countries by total collaboration weight. None = all.
+        Privzeto 40 — prepreči overflowing center.
+    color_by_continent : bool, default True
+        Color nodes by continent (Africa / Asia / Europe / N.A. / S.A. /
+        Oceania / Other), with legend.
+    label_fontsize : float, default 9
+    show : bool, default False
+    """
+    try:
+        from adjustText import adjust_text
+    except ImportError:
+        adjust_text = None
+
     if matrix_df.empty:
         print("Empty matrix: network not generated.")
         return
+
+    # Filter to top N by total collaborations (sum row + col)
+    if top_n is not None and len(matrix_df) > top_n:
+        totals = matrix_df.sum(axis=1) + matrix_df.sum(axis=0)
+        top_idx = totals.sort_values(ascending=False).head(top_n).index
+        matrix_df = matrix_df.loc[top_idx, top_idx]
 
     G = nx.Graph()
     for i in matrix_df.index:
         for j in matrix_df.columns:
             weight = matrix_df.loc[i, j]
             if i != j and weight >= threshold:
-                G.add_edge(i, j, weight=weight)
-
-    layout = {
-        "spring": nx.spring_layout,
-        "kamada_kawai": nx.kamada_kawai_layout,
-        "circular": nx.circular_layout,
-        "shell": nx.shell_layout
-    }[layout_func]
+                G.add_edge(i, j, weight=float(weight))
 
     if len(G.nodes) == 0:
         print("No edges above threshold: network not generated.")
         return
 
-    pos = layout(G)
-    edge_weights = [G[u][v]["weight"] for u, v in G.edges()]
+    layouts = {
+        "spring": lambda g: nx.spring_layout(g, seed=42, k=0.8, iterations=100),
+        "kamada_kawai": nx.kamada_kawai_layout,
+        "circular": nx.circular_layout,
+        "shell": nx.shell_layout,
+    }
+    pos = layouts[layout_func](G)
 
-    plt.figure(figsize=figsize)
-    nx.draw_networkx_nodes(G, pos, node_size=500)
-    nx.draw_networkx_edges(G, pos, width=[w * 0.1 for w in edge_weights])
-    nx.draw_networkx_labels(G, pos, font_size=10)
-    plt.title("Country Collaboration Network")
-    plt.axis("off")
+    # Node size ∝ total collaboration weight (square root for visual balance)
+    node_total = {n: float(matrix_df.loc[n].sum() + matrix_df[n].sum())
+                  for n in G.nodes}
+    max_total = max(node_total.values()) or 1.0
+    node_sizes = [200 + 1500 * (node_total[n] / max_total) ** 0.6
+                  for n in G.nodes]
+
+    # Color by continent
+    if color_by_continent:
+        node_colors = [_CONTINENT_COLORS.get(
+            country_to_continent(n), _CONTINENT_COLORS["Other"]
+        ) for n in G.nodes]
+    else:
+        node_colors = "#1f77b4"
+
+    # Edge widths: scale by weight (with cap)
+    edge_weights = np.array([G[u][v]["weight"] for u, v in G.edges()])
+    if edge_weights.size:
+        ew_max = np.percentile(edge_weights, 95)
+        edge_widths = np.clip(edge_weights / ew_max, 0.05, 1.0) * 3.5
+    else:
+        edge_widths = [1.0] * len(G.edges)
+
+    fig, ax = plt.subplots(figsize=figsize)
+    nx.draw_networkx_edges(
+        G, pos, width=edge_widths, edge_color="#888888",
+        alpha=0.45, ax=ax,
+    )
+    nx.draw_networkx_nodes(
+        G, pos, node_size=node_sizes, node_color=node_colors,
+        edgecolors="white", linewidths=1.2, alpha=0.92, ax=ax,
+    )
+
+    # Labels via adjustText (so they don't overlap)
+    texts = []
+    for n in G.nodes:
+        x, y = pos[n]
+        texts.append(ax.text(x, y, str(n), fontsize=label_fontsize,
+                             ha="center", va="center", zorder=10))
+    if adjust_text is not None and len(texts) > 1:
+        adjust_text(
+            texts, ax=ax,
+            expand=(1.1, 1.2),
+            arrowprops=dict(arrowstyle="-", color="grey", alpha=0.5, lw=0.5),
+        )
+
+    ax.set_title("Country Collaboration Network"
+                 + (f"  (top {len(G.nodes)} countries by total collab.)"
+                    if top_n else ""))
+    ax.axis("off")
+    ax.grid(False)
+
+    # Legend — placed outside the plot area so it never overlaps the network
+    if color_by_continent:
+        from matplotlib.lines import Line2D
+        present_continents = sorted({country_to_continent(n) for n in G.nodes})
+        handles = [
+            Line2D([0], [0], marker="o", color="w",
+                   markerfacecolor=_CONTINENT_COLORS.get(c,
+                       _CONTINENT_COLORS["Other"]),
+                   markersize=12, label=c)
+            for c in present_continents
+        ]
+        ax.legend(
+            handles=handles,
+            loc="upper left",
+            bbox_to_anchor=(1.02, 1.0),
+            fontsize=9,
+            frameon=False,
+            title="Continent",
+        )
+
+    # Reserve right margin for the legend so it never collides with the graph
+    try:
+        plt.subplots_adjust(right=0.78)
+    except Exception:
+        pass
     plt.tight_layout()
 
     if filename_base:
         save_plot(filename_base)
 
-    plt.show()
+    if show:
+        plt.show()
+    else:
+        plt.close(fig)
 
 # specific heatmap
 
@@ -9988,10 +10341,14 @@ def plot_country_collab_heatmap(matrix_df, top_n=50, figsize=(12, 10), cmap="Blu
 
     is_integer = np.allclose(matrix_top, matrix_top.astype(int))
     fmt = "d" if is_integer else ".2f"
-    sns.heatmap(matrix_top, cmap=cmap, square=True, annot=annotate, fmt=fmt,
-                cbar_kws={"label": "Collaboration Count"})    
+    ax_hm = sns.heatmap(matrix_top, cmap=cmap, square=True, annot=annotate, fmt=fmt,
+                cbar_kws={"label": "Collaboration Count"})
+    try:
+        ax_hm.grid(False)  # no grid lines (memory rule)
+    except Exception:  # noqa: BLE001
+        pass
 
-    plt.title("Country Collaboration Matrix (Top {} Countries)".format(top_n))
+    plt.title(f"Country Collaboration Matrix (Top {top_n} Countries)")
     plt.xticks(rotation=90)
     plt.yticks(rotation=0)
     plt.tight_layout()
@@ -11008,6 +11365,8 @@ def plot_group_metric_heatmap(
     title: str | None = None,
     filename_base: str | None = None,
     dpi: int = 600,
+    cmap: str | None = None,
+    normalize: str | None = None,
 ):
     """
     Plot a heatmap of a metric by entity and group.
@@ -11033,6 +11392,13 @@ def plot_group_metric_heatmap(
         ``None``, the figure is not saved.
     dpi : int, default 600
         Resolution used when saving the figure.
+    cmap : str or None, optional
+        Matplotlib colormap. If None, falls back to
+        ``biblium.config.plot_config.cmap`` (viridis by default).
+    normalize : {None, "row", "column"}, optional
+        If "row", each row is rescaled to sum to 100 (percent share of
+        entity across groups). If "column", each column rescales to 100.
+        If None, raw values are shown.
 
     Returns
     -------
@@ -11040,6 +11406,14 @@ def plot_group_metric_heatmap(
         The figure containing the heatmap.
     """
     import matplotlib.pyplot as plt
+
+    # Resolve cmap default from biblium plot_config (viridis).
+    if cmap is None:
+        try:
+            from biblium.config import plot_config as _pcfg
+            cmap = _pcfg.cmap or "viridis"
+        except Exception:  # noqa: BLE001
+            cmap = "viridis"
 
     df = stats_df.copy()
 
@@ -11079,11 +11453,29 @@ def plot_group_metric_heatmap(
     mat = mat.sort_index(axis=0)
     mat = mat.sort_index(axis=1)
 
+    # Optional row/column normalization to percents.
+    vmin_kw, vmax_kw = None, None
+    cbar_label = metric
+    if normalize == "row":
+        row_sums = mat.sum(axis=1).replace(0, 1)
+        mat = mat.div(row_sums, axis=0) * 100.0
+        vmin_kw, vmax_kw = 0.0, 100.0
+        cbar_label = f"{metric} (% of row)"
+    elif normalize == "column":
+        col_sums = mat.sum(axis=0).replace(0, 1)
+        mat = mat.div(col_sums, axis=1) * 100.0
+        vmin_kw, vmax_kw = 0.0, 100.0
+        cbar_label = f"{metric} (% of column)"
+
     fig_width = max(6.0, 0.9 * mat.shape[1])
     fig_height = max(5.0, 0.35 * mat.shape[0])
 
     fig, ax = plt.subplots(figsize=(fig_width, fig_height))
-    im = ax.imshow(mat.values, aspect="auto")
+    im = ax.imshow(
+        mat.values, aspect="auto", cmap=cmap,
+        vmin=vmin_kw, vmax=vmax_kw,
+    )
+    ax.grid(False)  # brez pomožnih črt
 
     ax.set_yticks(range(mat.shape[0]))
     ax.set_yticklabels(mat.index)
@@ -11095,7 +11487,7 @@ def plot_group_metric_heatmap(
     ax.set_title(title if title is not None else metric)
 
     cbar = plt.colorbar(im, ax=ax)
-    cbar.set_label(metric)
+    cbar.set_label(cbar_label)
 
     fig.tight_layout()
     save_plot(filename_base, dpi=dpi)
@@ -11518,8 +11910,17 @@ including citation trajectories, overview dashboards, and comparative plots.
 
 from biblium.utilsbib import SleepingBeautyResult
 
-# Plotting style
-plt.style.use("seaborn-v0_8-whitegrid")
+# Plotting style — uporabimo "white" namesto "whitegrid", da po default nimamo grid crt
+# (per Lan-ovi plot-quality memo: nikjer mreznih crt)
+try:
+    plt.style.use("seaborn-v0_8-white")
+except Exception:
+    plt.style.use("default")
+# Eksplicitno se enkrat, ker style.use lahko prepise prejsnje rcParams nastavitve
+import matplotlib as _mpl_local
+_mpl_local.rcParams["axes.grid"]         = False
+_mpl_local.rcParams["axes.spines.top"]   = False
+_mpl_local.rcParams["axes.spines.right"] = False
 
 
 

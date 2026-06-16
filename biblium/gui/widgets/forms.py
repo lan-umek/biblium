@@ -7,7 +7,7 @@ Input widgets with labels and consistent styling.
 
 import tkinter as tk
 from tkinter import ttk
-from typing import Any, Callable, List, Optional, Tuple, Union
+from typing import Any, Callable, List, Optional
 
 from biblium.gui.config import FONTS, LAYOUT, get_theme
 

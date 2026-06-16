@@ -5,9 +5,8 @@ Undo Manager
 Manages undo/redo history for data operations.
 """
 
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional
 from dataclasses import dataclass
-import copy
 
 try:
     import pandas as pd

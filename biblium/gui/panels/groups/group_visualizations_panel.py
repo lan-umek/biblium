@@ -15,15 +15,14 @@ Features:
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import threading
-from typing import Dict, List, Optional, Any
+from typing import Dict, List
 
-from biblium.gui.config import FONTS, LAYOUT, get_theme
+from biblium.gui.config import FONTS
 from biblium.gui.core.events import event_bus, EventBus
 from biblium.gui.panels.base import BasePanel
 from biblium.gui.widgets.cards import Card, CollapsibleCard, StatsCard, CardGrid
 from biblium.gui.widgets.buttons import ThemedButton, ActionButton
-from biblium.gui.widgets.forms import LabeledCombobox, LabeledCheckbox, LabeledSpinbox, LabeledEntry
-from biblium.gui.widgets.tables import DataTable
+from biblium.gui.widgets.forms import LabeledCombobox, LabeledCheckbox, LabeledSpinbox
 from biblium.gui.widgets.plots import PlotFrame
 from biblium.gui.widgets.tooltips import ToolTip
 
@@ -750,7 +749,7 @@ class GroupVisualizationsPanel(BasePanel):
             except Exception as e:
                 import traceback
                 traceback.print_exc()
-                self._safe_after(lambda: self._show_error(str(e)))
+                self._safe_after(lambda msg=str(e): self._show_error(msg))
         
         threading.Thread(target=do_plot, daemon=True).start()
     
@@ -821,7 +820,6 @@ class GroupVisualizationsPanel(BasePanel):
         
         elif viz_type == "dendrogram":
             from scipy.cluster.hierarchy import dendrogram, linkage
-            from scipy.spatial.distance import pdist
             
             # Compute distance matrix
             binary_data = group_matrix.T.values.astype(float)

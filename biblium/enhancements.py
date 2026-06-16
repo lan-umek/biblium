@@ -22,7 +22,6 @@ import hashlib
 import json
 import os
 import pickle
-import textwrap
 import warnings
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -33,14 +32,10 @@ from typing import (
     Any,
     Callable,
     Dict,
-    Iterable,
     List,
-    Literal,
     Optional,
     Tuple,
-    Type,
     TypeVar,
-    Union,
 )
 
 import pandas as pd
@@ -748,7 +743,7 @@ class FluentMixin:
         min_citations: int = None,
         query: str = None,
         inplace: bool = False,
-    ) -> "FluentMixin":
+    ) -> FluentMixin:
         """
         Filter the dataset with various criteria.
         
@@ -820,7 +815,7 @@ class FluentMixin:
             )
             return new_instance
     
-    def count_all(self, top_n: int = 20) -> "FluentMixin":
+    def count_all(self, top_n: int = 20) -> FluentMixin:
         """
         Run all counting methods.
         
@@ -846,7 +841,7 @@ class FluentMixin:
         
         return self
     
-    def stats_all(self, top_n: int = 20) -> "FluentMixin":
+    def stats_all(self, top_n: int = 20) -> FluentMixin:
         """
         Run all statistics methods.
         
@@ -873,7 +868,7 @@ class FluentMixin:
         self,
         output_dir: str = None,
         formats: List[str] = None,
-    ) -> "FluentMixin":
+    ) -> FluentMixin:
         """
         Generate summary plots.
         
@@ -902,7 +897,7 @@ class FluentMixin:
         output: str = "report",
         formats: List[str] = None,
         level: str = "basic",
-    ) -> "FluentMixin":
+    ) -> FluentMixin:
         """
         Export reports in specified formats.
         
@@ -1615,7 +1610,7 @@ class ProjectConfig:
     })
     
     @classmethod
-    def from_file(cls, path: str = "biblium.yaml") -> "ProjectConfig":
+    def from_file(cls, path: str = "biblium.yaml") -> ProjectConfig:
         """Load configuration from YAML file."""
         config_path = Path(path)
         

@@ -7,16 +7,16 @@ GUI panel for comprehensive sentiment analysis of bibliographic text data.
 
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
-from typing import Dict, Optional, Any
+from typing import Dict
 import pandas as pd
 
 from biblium.gui.panels.base import BasePanel
 from biblium.gui.widgets.cards import Card, StatsCard, CardGrid
-from biblium.gui.widgets.forms import LabeledCombobox, LabeledCheckbox, LabeledEntry
+from biblium.gui.widgets.forms import LabeledCombobox, LabeledCheckbox
 from biblium.gui.widgets.buttons import ActionButton
 from biblium.gui.widgets.tables import DataTable
 from biblium.gui.widgets.plots import PlotFrame
-from biblium.gui.config import FONTS, get_theme
+from biblium.gui.config import FONTS
 from biblium.gui.core.events import EventBus
 
 # Import sentiment analysis functions
@@ -500,7 +500,7 @@ class SentimentPanel(BasePanel):
             plot_frame.set_preserve_margins(True)
             plot_frame.refresh()
         except Exception as e:
-            tk.Label(parent, text=f"Error: {str(e)}", 
+            tk.Label(parent, text=f"Error: {e!s}", 
                     bg=self.theme["bg_card"], fg=self.theme.get("error", self.theme.get("danger", "#e74c3c"))).pack(expand=True)
     
     def _plot_categories(self, result: Dict, parent: tk.Frame):
@@ -522,7 +522,7 @@ class SentimentPanel(BasePanel):
             plot_frame.set_preserve_margins(True)
             plot_frame.refresh()
         except Exception as e:
-            tk.Label(parent, text=f"Error: {str(e)}", 
+            tk.Label(parent, text=f"Error: {e!s}", 
                     bg=self.theme["bg_card"], fg=self.theme.get("error", self.theme.get("danger", "#e74c3c"))).pack(expand=True)
     
     def _plot_temporal(self, result: Dict, parent: tk.Frame):
@@ -550,7 +550,7 @@ class SentimentPanel(BasePanel):
             plot_frame.set_preserve_margins(True)
             plot_frame.refresh()
         except Exception as e:
-            tk.Label(parent, text=f"Error: {str(e)}", 
+            tk.Label(parent, text=f"Error: {e!s}", 
                     bg=self.theme["bg_card"], fg=self.theme.get("error", self.theme.get("danger", "#e74c3c"))).pack(expand=True)
     
     def _plot_certainty(self, result: Dict, parent: tk.Frame):
@@ -572,7 +572,7 @@ class SentimentPanel(BasePanel):
             plot_frame.set_preserve_margins(True)
             plot_frame.refresh()
         except Exception as e:
-            tk.Label(parent, text=f"Error: {str(e)}", 
+            tk.Label(parent, text=f"Error: {e!s}", 
                     bg=self.theme["bg_card"], fg=self.theme.get("error", self.theme.get("danger", "#e74c3c"))).pack(expand=True)
     
     def _plot_correlations(self, result: Dict, parent: tk.Frame):
@@ -594,7 +594,7 @@ class SentimentPanel(BasePanel):
             plot_frame.set_preserve_margins(True)
             plot_frame.refresh()
         except Exception as e:
-            tk.Label(parent, text=f"Error: {str(e)}", 
+            tk.Label(parent, text=f"Error: {e!s}", 
                     bg=self.theme["bg_card"], fg=self.theme.get("error", self.theme.get("danger", "#e74c3c"))).pack(expand=True)
     
     def _show_top_documents(self, result: Dict, parent: tk.Frame):
@@ -748,7 +748,7 @@ class SentimentPanel(BasePanel):
                 
             messagebox.showinfo("Success", f"Results exported to:\n{filename}")
         except Exception as e:
-            messagebox.showerror("Error", f"Export failed:\n{str(e)}")
+            messagebox.showerror("Error", f"Export failed:\n{e!s}")
     
     def _save_plots(self, result: Dict):
         """Save plots to files."""
@@ -772,7 +772,7 @@ class SentimentPanel(BasePanel):
             else:
                 messagebox.showwarning("Warning", "Plotting module not available")
         except Exception as e:
-            messagebox.showerror("Error", f"Save failed:\n{str(e)}")
+            messagebox.showerror("Error", f"Save failed:\n{e!s}")
     
     def _show_loading(self, message: str = "Processing..."):
         """Show loading indicator."""

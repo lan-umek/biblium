@@ -16,7 +16,6 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple, Union, TYPE_CHECKING
 
 import pandas as pd
-import numpy as np
 
 if TYPE_CHECKING:
     from biblium.bibstats import BiblioStats
@@ -195,7 +194,7 @@ class AddonAnalyzer(ABC):
     @abstractmethod
     def analyze(
         self,
-        data: Union[pd.DataFrame, "BiblioStats"],
+        data: Union[pd.DataFrame, BiblioStats],
         **kwargs
     ) -> AddonResult:
         """
@@ -277,7 +276,7 @@ class AddonAnalyzer(ABC):
     
     def _get_dataframe(
         self,
-        data: Union[pd.DataFrame, "BiblioStats"]
+        data: Union[pd.DataFrame, BiblioStats]
     ) -> pd.DataFrame:
         """
         Extract DataFrame from input (handles both DataFrame and BiblioStats).
@@ -306,7 +305,7 @@ class AddonAnalyzer(ABC):
     
     def run(
         self,
-        data: Union[pd.DataFrame, "BiblioStats"],
+        data: Union[pd.DataFrame, BiblioStats],
         **kwargs
     ) -> AddonResult:
         """
@@ -695,7 +694,7 @@ class ExampleAnalyzer(AddonAnalyzer):
     
     def analyze(
         self,
-        data: Union[pd.DataFrame, "BiblioStats"],
+        data: Union[pd.DataFrame, BiblioStats],
         **kwargs
     ) -> ExampleResult:
         df = self._get_dataframe(data)

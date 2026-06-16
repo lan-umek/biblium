@@ -24,27 +24,17 @@ Created for integration with the Biblium bibliometric toolkit.
 from __future__ import annotations
 
 import os
-import re
-import warnings
 from collections import Counter, defaultdict
-from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union, Set
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Tuple, Set
 from itertools import combinations
 import json
 
 import numpy as np
 import pandas as pd
-from scipy.stats import percentileofscore, zscore, spearmanr, pearsonr, entropy
-from scipy.spatial.distance import cosine, jensenshannon
-from scipy.optimize import curve_fit
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
-from sklearn.linear_model import LinearRegression
+from scipy.stats import percentileofscore
 
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-from matplotlib.colors import Normalize, LinearSegmentedColormap, TwoSlopeNorm
-from matplotlib.cm import ScalarMappable
-import seaborn as sns
 
 # Import core biblium bridge
 try:
@@ -1695,7 +1685,7 @@ def plot_novelty_vs_impact(
         df['combinatorial_novelty'],
         df['fwci'],
         c=df['percentile_in_field_year'],
-        cmap=cmap or CMAP_CONTINUOUS,
+        cmap=CMAP_CONTINUOUS,
         alpha=0.6,
         s=50,
         edgecolors='white',
@@ -1991,9 +1981,6 @@ def plot_disruption_vs_citations(
     ax.legend()
     ax
     
-    # Disable grids
-    for _ax in axes.flat:
-        _
     plt.tight_layout()
     
     if save_path:

@@ -7,7 +7,7 @@ and documents the correct usage patterns.
 """
 
 import pandas as pd
-from typing import List, Optional
+from typing import List
 
 
 # =============================================================================

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+  <!-- Background -->
+  <rect x="2" y="2" width="44" height="44" rx="8" fill="none" stroke="#555555" stroke-width="1.5"/>
+  <!-- Venn circles -->
+  <circle cx="19" cy="22" r="11" fill="#555555" opacity="0.25" stroke="#555555" stroke-width="1.5"/>
+  <circle cx="29" cy="22" r="11" fill="#777777" opacity="0.25" stroke="#777777" stroke-width="1.5"/>
+  <!-- Intersection highlight -->
+  <clipPath id="clipA">
+    <circle cx="19" cy="22" r="11" fill="#333333"/>
+  </clipPath>
+  <circle cx="29" cy="22" r="11" fill="#555555" opacity="0.4" clip-path="url(#clipA)"/>
+  <!-- Counts in regions -->
+  <text x="14" y="24" text-anchor="middle" fill="#555555" font-size="7" font-weight="bold">12</text>
+  <text x="24" y="24" text-anchor="middle" fill="#555555" font-size="7" font-weight="bold">5</text>
+  <text x="34" y="24" text-anchor="middle" fill="#555555" font-size="7" font-weight="bold">8</text>
+  <!-- Third small circle (bottom) -->
+  <circle cx="24" cy="31" r="8" fill="#777777" opacity="0.2" stroke="#777777" stroke-width="1"/>
+  <!-- Intersection symbol badge -->
+  <circle cx="40" cy="8" r="5" fill="#555555"/>
+  <text x="40" y="11.5" text-anchor="middle" fill="#404040" font-size="9" font-weight="bold">∩</text>
+</svg>

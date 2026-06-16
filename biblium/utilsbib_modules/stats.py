@@ -10,7 +10,7 @@ This module contains:
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 import pandas as pd
 import numpy as np
 from scipy.stats import pearsonr
@@ -1311,6 +1311,7 @@ def analyze_collaboration(
     authors_col: str = "Authors",
     year_col: str = "Year",
     sep: str = "; ",
+    hyperauthorship_threshold: int = 10,
 ) -> Dict:
     """
     Analyze collaboration patterns in bibliographic data.
@@ -1469,6 +1470,8 @@ def analyze_collaboration(
         if len(counts) > 0:
             n_single = sum(1 for c in counts if c == 1)
             n_multi = len(counts) - n_single
+            n_hyper = sum(1 for c in counts
+                          if c >= hyperauthorship_threshold)
             temporal_data.append({
                 "year": year,
                 "n_papers": len(counts),
@@ -1480,6 +1483,8 @@ def analyze_collaboration(
                 "multi_author_count": n_multi,
                 "single_author_pct": n_single / len(counts) * 100 if len(counts) > 0 else 0,
                 "multi_author_pct": n_multi / len(counts) * 100 if len(counts) > 0 else 0,
+                "hyperauthored_count": n_hyper,
+                "hyperauthored_pct": n_hyper / len(counts) * 100 if len(counts) > 0 else 0,
             })
     
     temporal_trend = pd.DataFrame(temporal_data)
@@ -1508,6 +1513,9 @@ def analyze_collaboration(
         "Percentage": [category_counts.get(t, 0) / n * 100 if n > 0 else 0 for t in category_order],
     })
     
+    # Hyperauthorship — papers with a very large author team
+    hyperauthored = int(np.sum(author_counts >= hyperauthorship_threshold))
+
     return {
         "n_papers": n,
         "collaboration_index": collaboration_index,
@@ -1515,6 +1523,9 @@ def analyze_collaboration(
         "collaboration_coefficient": collaboration_coefficient,
         "single_author_papers": single_author,
         "multi_author_papers": multi_author,
+        "hyperauthored_papers": hyperauthored,
+        "hyperauthorship_rate": hyperauthored / n if n > 0 else 0,
+        "hyperauthorship_threshold": hyperauthorship_threshold,
         "max_authors": int(np.max(author_counts)),
         "basic_stats": basic_stats,
         "author_distribution": author_distribution,

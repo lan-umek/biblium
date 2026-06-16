@@ -6,8 +6,7 @@ Includes color palettes, typography settings, and formatting utilities.
 """
 
 from __future__ import annotations
-from typing import Dict, List, Optional, Tuple, Any
-from pathlib import Path
+from typing import Dict, List, Tuple, Any
 from datetime import datetime
 
 # =============================================================================
@@ -112,10 +111,7 @@ def style_word_document(doc, title: str = "Bibliometric Analysis Report"):
     title : str
         Report title for cover page.
     """
-    from docx.shared import Inches as DocxInches, Pt as DocxPt, RGBColor as DocxColor
-    from docx.enum.text import WD_ALIGN_PARAGRAPH
-    from docx.enum.style import WD_STYLE_TYPE
-    from docx.enum.table import WD_TABLE_ALIGNMENT
+    from docx.shared import Pt as DocxPt, RGBColor as DocxColor
     
     # Update default styles
     styles = doc.styles
@@ -179,10 +175,8 @@ def create_word_cover_page(
     dataset_info : dict
         Dataset summary info.
     """
-    from docx.shared import Inches as DocxInches, Pt as DocxPt, RGBColor as DocxColor
+    from docx.shared import Pt as DocxPt, RGBColor as DocxColor
     from docx.enum.text import WD_ALIGN_PARAGRAPH
-    from docx.oxml.ns import qn
-    from docx.oxml import OxmlElement
     
     if date is None:
         date = datetime.now().strftime("%B %d, %Y")
@@ -278,8 +272,8 @@ def style_word_table(table, style: str = "modern", has_header: bool = True):
         Whether first row is a header.
     """
     from docx.shared import Pt as DocxPt, RGBColor as DocxColor
-    from docx.oxml.ns import qn, nsdecls
-    from docx.oxml import OxmlElement, parse_xml
+    from docx.oxml.ns import qn
+    from docx.oxml import OxmlElement
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.enum.table import WD_TABLE_ALIGNMENT
     
@@ -394,9 +388,7 @@ def create_modern_pptx_template():
         Styled presentation object.
     """
     from pptx import Presentation
-    from pptx.util import Inches, Pt
-    from pptx.dml.color import RGBColor as PPTColor
-    from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
+    from pptx.util import Inches
     
     prs = Presentation()
     prs.slide_width = Inches(13.333)  # 16:9 aspect ratio
@@ -418,7 +410,7 @@ def style_pptx_title_slide(slide, title: str, subtitle: str = ""):
     subtitle : str
         Subtitle text.
     """
-    from pptx.util import Inches, Pt
+    from pptx.util import Pt
     from pptx.dml.color import RGBColor as PPTColor
     from pptx.enum.text import PP_ALIGN
     
@@ -460,7 +452,6 @@ def style_pptx_content_slide(slide, title: str = None):
     """
     from pptx.util import Pt
     from pptx.dml.color import RGBColor as PPTColor
-    from pptx.enum.text import PP_ALIGN
     
     if slide.shapes.title and title:
         title_shape = slide.shapes.title
@@ -487,7 +478,6 @@ def style_pptx_table(table, has_header: bool = True):
     """
     from pptx.util import Pt
     from pptx.dml.color import RGBColor as PPTColor
-    from pptx.enum.text import PP_ALIGN
     
     for i, row in enumerate(table.rows):
         is_header = (i == 0 and has_header)
@@ -532,7 +522,7 @@ def style_excel_workbook(wb):
     wb : openpyxl.Workbook
         The workbook to style.
     """
-    from openpyxl.styles import Font, PatternFill, Border, Side, Alignment, NamedStyle
+    from openpyxl.styles import Font, PatternFill, Alignment, NamedStyle
     
     # Create named styles
     try:
@@ -597,7 +587,6 @@ def style_excel_worksheet(ws, df, start_row: int = 1, has_header: bool = True):
     """
     from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
     from openpyxl.utils import get_column_letter
-    from openpyxl.formatting.rule import FormulaRule, ColorScaleRule
     
     # Define styles
     header_font = Font(name=Typography.BODY_FONT, size=11, bold=True, color="FFFFFF")
@@ -668,7 +657,7 @@ def add_excel_cover_sheet(wb, title: str, info: Dict[str, Any] = None):
     info : dict
         Additional info to display.
     """
-    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.styles import Font, Alignment
     
     # Create cover sheet at the beginning
     ws = wb.create_sheet("Cover", 0)
@@ -725,7 +714,7 @@ def add_excel_conditional_formatting(ws, df, start_row: int = 1):
     start_row : int
         Starting row for data.
     """
-    from openpyxl.formatting.rule import ColorScaleRule, DataBarRule
+    from openpyxl.formatting.rule import DataBarRule
     from openpyxl.utils import get_column_letter
     
     # Find numeric columns that might benefit from data bars

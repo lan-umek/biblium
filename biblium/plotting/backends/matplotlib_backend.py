@@ -7,7 +7,7 @@ Provides the Matplotlib implementation of the PlotBackend interface.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, List, Optional, Tuple, Union
 
 import pandas as pd
 import numpy as np
@@ -1060,31 +1060,65 @@ class MatplotlibBackend(PlotBackend):
         labels: str,
         parents: Optional[str] = None,
         config: Optional[PlotConfig] = None,
+        wrap_width: int = 15,
+        min_label_size_ratio: float = 0.012,
         **kwargs,
     ) -> Any:
-        """Create a treemap."""
+        """Create a treemap with text-wrapped labels.
+
+        Parameters
+        ----------
+        wrap_width : int
+            textwrap width per line (default 15 chars) -- prevents label overflow.
+        min_label_size_ratio : float
+            Hide labels for boxes smaller than this share of total area (default 1.2%).
+        """
+        import textwrap as _tw
         config = self._merge_config(config)
+        # Enlarge figsize for treemaps so labels do not overlap (override only if not user-supplied)
+        if (config.width or 10) < 12 or (config.height or 6) < 8:
+            try:
+                config = config.update(width=max(config.width or 10, 14),
+                                       height=max(config.height or 6, 9))
+            except Exception:
+                pass
         fig, ax = self._create_figure(config)
-        
+
         try:
             import squarify
         except ImportError:
             raise ImportError("squarify required for treemaps: pip install squarify")
-        
+
         colors = self._get_colors(len(data), config)
-        
+
         # Normalize values
         norm_values = data[values] / data[values].sum() * 100
-        
+
+        # Build wrapped labels and hide labels for too-small boxes
+        if config.show_labels:
+            total = float(norm_values.sum()) if len(norm_values) else 0.0
+            wrapped = []
+            for lab, sz in zip(data[labels].astype(str), norm_values):
+                if total > 0 and (sz / total) < min_label_size_ratio:
+                    wrapped.append("")
+                else:
+                    wrapped.append("\n".join(_tw.wrap(lab, width=wrap_width)) or lab)
+            label_list = wrapped
+        else:
+            label_list = None
+
+        # Bump font size for readability (>= 10) when user did not override
+        _font = max(int(config.label_font_size or 0), 10)
+
         squarify.plot(
             sizes=norm_values,
-            label=data[labels] if config.show_labels else None,
+            label=label_list,
             color=colors,
             alpha=config.alpha,
             ax=ax,
-            text_kwargs={"fontsize": config.label_font_size},
+            text_kwargs={"fontsize": _font, "wrap": True},
         )
-        
+
         ax.axis("off")
         
         if config.title:

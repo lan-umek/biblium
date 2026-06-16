@@ -10,16 +10,15 @@ Panel for analyzing collaboration patterns in bibliometric data.
 
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
-from typing import Dict, Optional
+from typing import Dict
 
-from biblium.gui.config import FONTS, LAYOUT, get_theme
+from biblium.gui.config import FONTS
 from biblium.gui.core.events import event_bus, EventBus
 from biblium.gui.panels.base import BasePanel
-from biblium.gui.widgets.cards import Card, CollapsibleCard, StatsCard, CardGrid
+from biblium.gui.widgets.cards import Card, StatsCard, CardGrid
 from biblium.gui.widgets.buttons import ThemedButton, ActionButton
 from biblium.gui.widgets.forms import LabeledCombobox, LabeledCheckbox, LabeledEntry
 from biblium.gui.widgets.tables import DataTable
-from biblium.gui.widgets.plots import add_plot_context_menu, make_canvas_resizable
 from biblium.gui.widgets.plots import PlotFrame
 
 try:
@@ -695,7 +694,7 @@ class CollaborationPanel(BasePanel):
             
             messagebox.showinfo("Success", f"Data exported to:\n{filepath}")
         except Exception as e:
-            messagebox.showerror("Error", f"Export failed:\n{str(e)}")
+            messagebox.showerror("Error", f"Export failed:\n{e!s}")
     
     def _save_plots(self, result: Dict):
         """Save plots to files."""
@@ -717,7 +716,7 @@ class CollaborationPanel(BasePanel):
             
             messagebox.showinfo("Success", f"Plots saved to:\n{base}.png/pdf/svg")
         except Exception as e:
-            messagebox.showerror("Error", f"Save failed:\n{str(e)}")
+            messagebox.showerror("Error", f"Save failed:\n{e!s}")
     
     def _show_loading(self, message: str = "Processing..."):
         """Show loading indicator."""

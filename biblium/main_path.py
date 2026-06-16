@@ -15,10 +15,13 @@ Features:
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple, Any, Literal
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Any, Literal
 import warnings
 
 import numpy as np
+
+if TYPE_CHECKING:
+    import matplotlib  # noqa: F401
 import pandas as pd
 
 try:

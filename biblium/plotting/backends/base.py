@@ -8,10 +8,9 @@ Defines the interface that all plotting backends must implement.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, List, Optional, Union
 
 import pandas as pd
-import numpy as np
 
 from biblium.plotting.config import PlotConfig
 

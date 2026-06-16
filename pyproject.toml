@@ -4,12 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "biblium"
-version = "2.0.2"
+version = "2.16.0"
 description = "Comprehensive Python library for bibliometric analysis of scientific literature"
 readme = "README.md"
 license = {text = "MIT"}
 authors = [
-    {name = "Lan Umek"}
+    {name = "Lan Umek", email = "lan.umek@fu.uni-lj.si"}
 ]
 keywords = [
     "bibliometrics",
@@ -17,7 +17,10 @@ keywords = [
     "citation analysis",
     "scopus",
     "web of science",
-    "openalex"
+    "openalex",
+    "pubmed",
+    "network analysis",
+    "topic modeling"
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -28,24 +31,111 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+    "Topic :: Text Processing :: General",
 ]
 requires-python = ">=3.9"
 dependencies = [
+    # Core
     "pandas>=1.5.0",
-    "numpy>=1.21.0",
-    "matplotlib>=3.5.0",
-    "networkx>=2.6",
-    "scikit-learn>=1.0.0",
+    "numpy>=1.23.0",
     "openpyxl>=3.0.0",
-    "scipy>=1.7.0",
-    "seaborn>=0.11.0",
+    "xlsxwriter>=3.0.0",
+    
+    # Visualization
+    "matplotlib>=3.6.0",
+    "seaborn>=0.12.0",
+    "pillow>=9.0.0",
+    "wordcloud>=1.9.0",
+    "adjustText>=0.8",
+    "squarify>=0.4.0",
+    
+    # Network
+    "networkx>=2.8.0",
+    
+    # NLP & Text
+    "nltk>=3.8.0",
+    "scikit-learn>=1.2.0",
+    "scipy>=1.10.0",
+    
+    # Statistics
+    "statsmodels>=0.14.0",
+    
+    # Documents
+    "python-docx>=0.8.0",
+    "python-pptx>=0.6.0",
+    "reportlab>=4.0.0",
+    
+    # Utilities
+    "requests>=2.28.0",
+    "tqdm>=4.65.0",
+    
+    # Fuzzy matching
+    "thefuzz>=0.20.0",
+    "rapidfuzz>=3.0.0",
+]
+
+[project.optional-dependencies]
+llm = [
+    "openai>=1.0.0",
+    "anthropic>=0.18.0",
+    "huggingface_hub>=0.19.0",
+]
+nlp = [
+    "gensim>=4.3.0",
+    "spacy>=3.5.0",
+    "sentence-transformers>=2.2.0",
+    "bertopic>=0.15.0",
+    "textblob>=0.17.0",
+    "pyLDAvis>=3.4.0",
+    "transformers>=4.30.0",
+]
+geo = [
+    "geopandas>=0.12.0",
+    "folium>=0.14.0",
+    "geopy>=2.3.0",
+    "pycountry>=22.0.0",
+    "shapely>=2.0.0",
+]
+interactive = [
+    "bokeh>=3.0.0",
+    "plotly>=5.0.0",
+    "pyvis>=0.3.0",
+    "holoviews>=1.15.0",
+]
+ml = [
+    "xgboost>=1.7.0",
+    "lightgbm>=3.3.0",
+    "umap-learn>=0.5.0",
+    "prince>=0.8.0",
+]
+network = [
+    "python-igraph>=0.10.0",
+    "python-louvain>=0.16",
+]
+extra = [
+    "upsetplot>=0.8.0",
+    "venn>=0.1.3",
+    "matplotlib-venn>=0.11.0",
+    "powerlaw>=1.5.0",
+    "psutil>=5.9.0",
+    "pyyaml>=6.0.0",
+    "ratelimit>=2.2.0",
+]
+full = [
+    "biblium[llm,nlp,geo,interactive,ml,network,extra]",
 ]
 
 [project.urls]
 Homepage = "https://github.com/lan-umek/biblium"
+Documentation = "https://github.com/lan-umek/biblium#readme"
+Repository = "https://github.com/lan-umek/biblium"
+Issues = "https://github.com/lan-umek/biblium/issues"
 
 [project.scripts]
-biblium-gui = "biblium.bibtkinter_app:main"
+biblium-gui = "biblium.gui.app:main"
 
 [tool.setuptools]
 include-package-data = true
@@ -54,8 +144,11 @@ include-package-data = true
 include = ["biblium*"]
 
 [tool.setuptools.package-data]
-"biblium" = [
+biblium = [
     "additional files/*.xlsx",
     "additional files/*.txt",
     "additional files/icons/*",
+    "data/*.csv",
+    "data/*.txt",
+    "data/*.xlsx",
 ]

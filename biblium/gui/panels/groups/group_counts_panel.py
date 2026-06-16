@@ -20,9 +20,9 @@ Supports counting:
 import tkinter as tk
 from tkinter import ttk, messagebox
 import threading
-from typing import Dict, List, Optional, Any
+from typing import Dict, List
 
-from biblium.gui.config import FONTS, LAYOUT, get_theme
+from biblium.gui.config import FONTS
 from biblium.gui.core.events import event_bus, EventBus
 from biblium.gui.panels.base import BasePanel
 from biblium.gui.widgets.cards import Card, CollapsibleCard, StatsCard, CardGrid
@@ -882,7 +882,7 @@ class GroupCountsPanel(BasePanel):
             traceback.print_exc()
             tk.Label(
                 target,
-                text=f"Could not create plot: {str(e)}",
+                text=f"Could not create plot: {e!s}",
                 font=FONTS.get_font("small"),
                 bg=self.theme["bg_card"],
                 fg=self.theme.get("warning", "#f59e0b"),
@@ -893,7 +893,7 @@ class GroupCountsPanel(BasePanel):
             traceback.print_exc()
             tk.Label(
                 target,
-                text=f"Could not create plot: {str(e)}",
+                text=f"Could not create plot: {e!s}",
                 font=FONTS.get_font("small"),
                 bg=self.theme["bg_card"],
                 fg=self.theme.get("warning", "#f59e0b"),
@@ -920,7 +920,7 @@ class GroupCountsPanel(BasePanel):
                         result_df = method(merge_type=merge_type)
                         results[key] = result_df
                 except Exception as e:
-                    errors.append(f"{config['label']}: {str(e)}")
+                    errors.append(f"{config['label']}: {e!s}")
             
             self._safe_after(lambda: self._display_count_all_results(results, errors))
         

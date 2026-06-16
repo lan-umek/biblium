@@ -7,18 +7,16 @@ GUI panel for creating animated race bar charts showing cumulative counts over t
 
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
-from typing import Dict, Optional, Any
+from typing import Dict, Optional
 import pandas as pd
-import os
 import threading
 
 from biblium.gui.panels.base import BasePanel
 from biblium.gui.widgets.cards import Card, StatsCard, CardGrid
-from biblium.gui.widgets.forms import LabeledCombobox, LabeledCheckbox, LabeledEntry
-from biblium.gui.widgets.plots import add_plot_context_menu, make_canvas_resizable
+from biblium.gui.widgets.forms import LabeledCombobox, LabeledCheckbox
 from biblium.gui.widgets.buttons import ActionButton
 from biblium.gui.widgets.plots import PlotFrame
-from biblium.gui.config import FONTS, get_theme
+from biblium.gui.config import FONTS
 from biblium.gui.core.events import EventBus
 
 # Import race bar functions
@@ -673,7 +671,7 @@ class RaceBarPanel(BasePanel):
                 self.after(0, lambda: self._export_complete(output_path, None))
                 
             except Exception as e:
-                self.after(0, lambda: self._export_complete(None, str(e)))
+                self.after(0, lambda msg=str(e): self._export_complete(None, msg))
         
         # Run export in background thread
         self._export_thread = threading.Thread(target=do_export, daemon=True)

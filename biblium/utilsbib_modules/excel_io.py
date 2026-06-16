@@ -10,10 +10,8 @@ This module contains:
 
 from __future__ import annotations
 
-import os
-from typing import Dict, List, Optional, Union, Any
+from typing import List, Optional, Union
 import pandas as pd
-import numpy as np
 from scipy.stats import rankdata
 from openpyxl.styles import PatternFill, Font, Border, Side, Alignment
 from openpyxl.formatting.rule import DataBarRule

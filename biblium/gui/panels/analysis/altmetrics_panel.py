@@ -7,7 +7,7 @@ GUI panel for analyzing alternative metrics (social media, news, policy mentions
 
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
-from typing import Dict, Optional
+from typing import Dict
 import pandas as pd
 
 from biblium.gui.panels.base import BasePanel
@@ -16,7 +16,7 @@ from biblium.gui.widgets.forms import LabeledCombobox, LabeledCheckbox, LabeledE
 from biblium.gui.widgets.buttons import ActionButton
 from biblium.gui.widgets.tables import DataTable
 from biblium.gui.widgets.plots import PlotFrame
-from biblium.gui.config import FONTS, get_theme
+from biblium.gui.config import FONTS
 from biblium.gui.core.events import EventBus
 
 try:
@@ -601,7 +601,7 @@ class AltmetricsPanel(BasePanel):
                     result["temporal_trends"].to_excel(writer, sheet_name="Trends", index=False)
             messagebox.showinfo("Success", f"Results exported to:\n{filename}")
         except Exception as e:
-            messagebox.showerror("Error", f"Export failed:\n{str(e)}")
+            messagebox.showerror("Error", f"Export failed:\n{e!s}")
     
     def _save_plots(self, result: Dict):
         """Save plots to files."""
@@ -617,7 +617,7 @@ class AltmetricsPanel(BasePanel):
             plotbib.plot_altmetric_sources(result, filename=base + "_sources", show=False)
             messagebox.showinfo("Success", f"Plots saved to:\n{base}_*.png/pdf/svg")
         except Exception as e:
-            messagebox.showerror("Error", f"Save failed:\n{str(e)}")
+            messagebox.showerror("Error", f"Save failed:\n{e!s}")
     
     def _show_loading(self, message: str = "Processing..."):
         """Show loading indicator."""

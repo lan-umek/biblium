@@ -21,18 +21,15 @@ import asyncio
 import hashlib
 import json
 import os
-import pickle
-import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from functools import lru_cache, wraps
+from functools import wraps
 from pathlib import Path
 from typing import (
     Any,
     Callable,
     Dict,
-    Iterable,
     List,
     Literal,
     Optional,
@@ -176,7 +173,7 @@ class LLMCache:
             cache_file = self.cache_dir / f"{key}.json"
             if cache_file.exists():
                 try:
-                    with open(cache_file, "r", encoding="utf-8") as f:
+                    with open(cache_file, encoding="utf-8") as f:
                         data = json.load(f)
                     if time.time() - data.get("timestamp", 0) < self.ttl:
                         response = data["response"]
@@ -1268,7 +1265,7 @@ def llm_batch_classify(
             try:
                 results[idx] = future.result()
             except Exception as e:
-                results[idx] = f"ERROR: {str(e)}"
+                results[idx] = f"ERROR: {e!s}"
             completed += 1
             if show_progress:
                 print(f"\r  Processing: {completed}/{len(abstracts)}", end="", flush=True)

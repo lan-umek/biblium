@@ -10,10 +10,9 @@ Uses biblium.utilsbib.build_thematic_map for core computation.
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import threading
-import io
-from typing import Dict, List, Optional
+from typing import Dict
 
-from biblium.gui.config import FONTS, LAYOUT, get_theme
+from biblium.gui.config import FONTS
 from biblium.gui.core.events import event_bus, EventBus
 from biblium.gui.panels.base import BasePanel
 from biblium.gui.widgets.cards import Card, CollapsibleCard
@@ -333,7 +332,6 @@ class ThematicMapPanel(BasePanel):
             return
         
         try:
-            from PIL import Image, ImageTk
             
             # Create larger figure to accommodate labels
             fig = Figure(figsize=(14, 11), dpi=100)

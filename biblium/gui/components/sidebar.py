@@ -6,8 +6,7 @@ Navigation sidebar with collapsible sections.
 """
 
 import tkinter as tk
-from tkinter import ttk
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional
 
 from biblium.gui.config import FONTS, LAYOUT, get_theme
 from biblium.gui.core.events import event_bus, EventBus

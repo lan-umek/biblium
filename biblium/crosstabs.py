@@ -14,8 +14,8 @@ Features:
 - Standardized residuals
 """
 
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple, Any
+from dataclasses import dataclass
+from typing import List
 
 import numpy as np
 import pandas as pd

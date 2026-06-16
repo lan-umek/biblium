@@ -15,7 +15,7 @@ Features:
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, List, Optional, Tuple, Union, Literal
+from typing import Any, List, Optional, Tuple, Literal
 
 import pandas as pd
 import numpy as np
@@ -198,7 +198,6 @@ class RaceBarMixin:
         """
         import matplotlib.pyplot as plt
         from matplotlib.animation import FuncAnimation
-        from matplotlib import rcParams
         
         # Prepare data
         race_df = self._prepare_race_data(
@@ -375,7 +374,6 @@ class RaceBarMixin:
             elif output_format == "gif":
                 anim.save(output_path, writer="pillow", fps=fps, dpi=100)
             elif output_format == "html":
-                from matplotlib.animation import HTMLWriter
                 anim.save(output_path, writer="html", fps=fps)
             
             plt.close(fig)

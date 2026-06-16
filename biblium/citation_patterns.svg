@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+  <!-- Background -->
+  <rect x="4" y="4" width="40" height="40" rx="4" fill="none"/>
+  
+  <!-- Pattern lines showing different trajectories -->
+  <!-- Evergreen - green steady line -->
+  <path d="M8 36 L16 30 L24 28 L32 26 L40 24" stroke="#777777" stroke-width="2.5" fill="none"/>
+  
+  <!-- Flash in the pan - red spike then decline -->
+  <path d="M8 36 L14 12 L20 32 L26 35 L32 36 L40 37" stroke="#555555" stroke-width="2.5" fill="none"/>
+  
+  <!-- Sleeping beauty - blue delayed rise -->
+  <path d="M8 36 L16 35 L24 34 L30 26 L36 14 L40 10" stroke="#555555" stroke-width="2.5" fill="none"/>
+  
+  <!-- Chart grid indicator -->
+  <line x1="8" y1="38" x2="40" y2="38" stroke="#777777" stroke-width="1"/>
+  <line x1="8" y1="10" x2="8" y2="38" stroke="#777777" stroke-width="1"/>
+  
+  <!-- Classification dots -->
+  <circle cx="40" cy="24" r="3" fill="#777777"/>
+  <circle cx="14" cy="12" r="3" fill="#555555"/>
+  <circle cx="40" cy="10" r="3" fill="#555555"/>
+</svg>

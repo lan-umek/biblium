@@ -7,7 +7,7 @@ Main application toolbar with Run/Stop controls.
 
 import tkinter as tk
 from tkinter import ttk
-from typing import Callable, Dict, Optional
+from typing import Callable, Optional
 
 from biblium.gui.config import FONTS, LAYOUT, get_theme
 from biblium.gui.core.events import event_bus, EventBus

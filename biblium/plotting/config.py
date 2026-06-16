@@ -474,13 +474,13 @@ class PlotConfig:
         # Cycle colors if needed
         return [colors[i % len(colors)] for i in range(n)]
     
-    def update(self, **kwargs) -> "PlotConfig":
+    def update(self, **kwargs) -> PlotConfig:
         """Return a new config with updated values."""
         d = self.to_dict()
         d.update(kwargs)
         return PlotConfig(**d)
     
-    def merge(self, other: "PlotConfig") -> "PlotConfig":
+    def merge(self, other: PlotConfig) -> PlotConfig:
         """Merge another config, other takes precedence for non-None values."""
         d = self.to_dict()
         for k, v in other.to_dict().items():
@@ -489,7 +489,7 @@ class PlotConfig:
         return PlotConfig(**d)
     
     @classmethod
-    def minimal(cls) -> "PlotConfig":
+    def minimal(cls) -> PlotConfig:
         """Create a minimal config with reduced decoration."""
         return cls(
             show_grid=False,
@@ -499,7 +499,7 @@ class PlotConfig:
         )
     
     @classmethod
-    def presentation(cls) -> "PlotConfig":
+    def presentation(cls) -> PlotConfig:
         """Create a config optimized for presentations."""
         return cls(
             width=1200,
@@ -514,7 +514,7 @@ class PlotConfig:
         )
     
     @classmethod
-    def publication(cls) -> "PlotConfig":
+    def publication(cls) -> PlotConfig:
         """Create a config optimized for publication."""
         return cls(
             width=600,
@@ -531,7 +531,7 @@ class PlotConfig:
         )
     
     @classmethod
-    def dark_mode(cls) -> "PlotConfig":
+    def dark_mode(cls) -> PlotConfig:
         """Create a dark mode config."""
         return cls(
             background_color="#1a1a2e",

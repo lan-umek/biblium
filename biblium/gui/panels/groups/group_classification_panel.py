@@ -8,17 +8,16 @@ and comprehensive performance metrics (accuracy, precision, recall, F1, AUC).
 
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Any
 import pandas as pd
 import numpy as np
 
 from biblium.gui.panels.base import BasePanel
 from biblium.gui.widgets.cards import Card, StatsCard, CardGrid
-from biblium.gui.widgets.forms import LabeledCombobox, LabeledCheckbox, LabeledEntry
+from biblium.gui.widgets.forms import LabeledCombobox, LabeledCheckbox
 from biblium.gui.widgets.buttons import ActionButton
-from biblium.gui.widgets.plots import PlotFrame
 from biblium.gui.widgets.tables import DataTable
-from biblium.gui.config import FONTS, get_theme
+from biblium.gui.config import FONTS
 from biblium.gui.core.events import EventBus
 
 try:

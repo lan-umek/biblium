@@ -8,15 +8,13 @@ Dataset summary with comprehensive statistics.
 import tkinter as tk
 from tkinter import ttk, messagebox
 import threading
-from typing import Dict, Optional
+from typing import Dict
 
-from biblium.gui.config import FONTS, LAYOUT, get_theme
-from biblium.gui.core.events import event_bus, EventBus
+from biblium.gui.config import FONTS
 from biblium.gui.panels.base import BasePanel
-from biblium.gui.widgets.cards import Card, CollapsibleCard, StatsCard, CardGrid, ScrollableStatsRow
-from biblium.gui.widgets.buttons import ThemedButton, ActionButton
+from biblium.gui.widgets.cards import Card, StatsCard, ScrollableStatsRow
+from biblium.gui.widgets.buttons import ActionButton
 from biblium.gui.widgets.forms import LabeledCheckbox
-from biblium.gui.widgets.tables import DataTable
 from biblium.gui.widgets.plots import PlotFrame
 
 try:
@@ -336,8 +334,7 @@ class OverviewPanel(BasePanel):
                 
                 self.after(0, lambda: self._on_overview_success(info))
             except Exception as e:
-                import traceback
-                self.after(0, lambda: self._on_overview_error(str(e)))
+                self.after(0, lambda msg=str(e): self._on_overview_error(msg))
         
         threading.Thread(target=do_generate, daemon=True).start()
     
@@ -360,13 +357,13 @@ class OverviewPanel(BasePanel):
             grid.add_card(StatsCard(grid.inner_frame, "Avg Citations", f"{info['mean_citations']:.1f}", "📊", self.theme_name))
         
         # Year range from biblium summary or fallback
-        if "year_range" in info and info["year_range"]:
+        if info.get("year_range"):
             grid.add_card(StatsCard(grid.inner_frame, "Year Range", str(info["year_range"]), "📅", self.theme_name))
         elif "year_min" in info and info.get("year_min"):
             timespan = info["year_max"] - info["year_min"] + 1
             grid.add_card(StatsCard(grid.inner_frame, "Timespan", f"{timespan} years", "📅", self.theme_name))
         
-        if "database" in info and info["database"]:
+        if info.get("database"):
             grid.add_card(StatsCard(grid.inner_frame, "Database", str(info["database"]).upper(), "🗄️", self.theme_name))
         
         # Descriptives from biblium (if available)
@@ -773,9 +770,7 @@ class OverviewPanel(BasePanel):
         
         try:
             # Handle different formats (dict, list of tuples, DataFrame)
-            if isinstance(items, dict):
-                item_list = list(items.items())[:10]
-            elif hasattr(items, 'items'):
+            if isinstance(items, dict) or hasattr(items, 'items'):
                 item_list = list(items.items())[:10]
             elif hasattr(items, 'iterrows'):  # DataFrame
                 item_list = [(row.iloc[0], row.iloc[1]) for _, row in items.head(10).iterrows()]

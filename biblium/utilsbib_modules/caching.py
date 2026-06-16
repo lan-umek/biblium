@@ -17,7 +17,6 @@ The caching is designed to be:
 from __future__ import annotations
 
 import hashlib
-import weakref
 from functools import wraps
 from typing import Any, Callable, Dict, Optional, Tuple, TypeVar, Union
 

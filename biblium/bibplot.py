@@ -13,18 +13,190 @@ import re
 import os
 import logging
 import pandas as pd
-from typing import Optional, Dict, List, Any, Tuple
+from typing import Optional, Dict, Any, Tuple
 import matplotlib.pyplot as plt
 
-# Try to import co_mapping, fallback if not available
+# co_mapping — kateri 'items' string se prepiše v kateri stored network atribut
+# in kateri getter ga zgradi. Uporabljen v BiblioPlot.plot_thematic_map (in
+# podobnih plot_* metodah, ki sprejmejo `items=...`).
+#
+# Vsak getter je metoda na BiblioStats, ki nastavi  pripadajoči `*_cooccurrence_network`
+# atribut prek compute_cooccurrence(output_attr_prefix=...). Atribut imena so
+# usklajeni s prefixami, ki jih uporabljajo specifični get_*_cooccurrence wrapperji
+# (glej bibstats.py: get_author_keyword_cooccurrence → 'author_keyword',
+# get_index_keyword_cooccurrence → 'ik' itd.).
+#
+# Če je mappingbib paket nameščen, ga uporabimo (override); sicer privzeto kar
+# spodaj. Tako stara koda, ki je pričakovala mappingbib, deluje, in nova koda
+# brez mappingbib tudi.
 try:
-    from mappingbib import co_mapping
+    from mappingbib import co_mapping  # type: ignore
 except ImportError:
-    co_mapping = {}
+    co_mapping = {
+        "author keywords": {
+            "net_attr": "author_keyword_cooccurrence_network",
+            "getter":   "get_author_keyword_cooccurrence",
+        },
+        "index keywords": {
+            "net_attr": "ik_cooccurrence_network",
+            "getter":   "get_index_keyword_cooccurrence",
+        },
+        "title ngrams": {
+            "net_attr": "ngrams_title_cooccurrence_network",
+            "getter":   "get_ngrams_title_cooccurrence",
+        },
+        "abstract ngrams": {
+            "net_attr": "ngrams_abstract_cooccurrence_network",
+            "getter":   "get_ngrams_abstract_cooccurrence",
+        },
+        "co-citations": {
+            "net_attr": "refs_cooccurrence_network",
+            "getter":   "get_co_citations",
+        },
+        "co-authorship": {
+            "net_attr": "auth_cooccurrence_network",
+            "getter":   "get_coauthorship",
+        },
+        "country collaboration": {
+            "net_attr": "all_countries_cooccurrence_network",
+            "getter":   "get_country_collaboration_network",
+        },
+    }
+    # User-friendly aliases
+    _co_aliases = {
+        "Author Keywords":        "author keywords",
+        "AK":                     "author keywords",
+        "ak":                     "author keywords",
+        "Index Keywords":         "index keywords",
+        "IK":                     "index keywords",
+        "ik":                     "index keywords",
+        "title":                  "title ngrams",
+        "abstract":               "abstract ngrams",
+        "co_citations":           "co-citations",
+        "cocitations":            "co-citations",
+        "co_citation":            "co-citations",
+        "co citations":           "co-citations",
+        "coauthorship":           "co-authorship",
+        "co-author":              "co-authorship",
+        "co authorship":          "co-authorship",
+        "countries":              "country collaboration",
+        "country":                "country collaboration",
+    }
+    for _alias, _canonical in _co_aliases.items():
+        co_mapping[_alias] = co_mapping[_canonical]
 
 class BiblioPlot(BiblioStats):
-    
-    
+
+
+    def plot_disruption_quadrants(
+        self,
+        cd_col: str = "cd_index",
+        citation_col: str = "Cited by",
+        title_col: str = "Title",
+        n_label: int = 10,
+        log_y: bool = True,
+        filename: str = "disruption_quadrants",
+        figsize: tuple = (11, 8),
+        **kwargs,
+    ):
+        """
+        Funk-Owen-Wu CD-index × citacije scatter, razdeljen v 4 kvadrante:
+          - high cite × high CD  → paradigm-shifters
+          - high cite × low CD   → konsolidacija
+          - low cite × high CD   → "potencial"
+          - low cite × low CD    → trivialni
+
+        Predpostavi, da je bil compute_disruption_index() že klican, tako da
+        self.df vsebuje 'cd_index' (oz. drug ime po cd_col) in 'Cited by'.
+
+        Plot brez pomožnih črt; označi top n_label paradigm-shifterjev po
+        utežitvi cite × |CD|.
+        """
+        import os
+        import numpy as np
+        import matplotlib.pyplot as plt
+
+        df = self.df
+        if cd_col not in df.columns or citation_col not in df.columns:
+            raise ValueError(
+                f"Manjka stolpec {cd_col!r} ali {citation_col!r}. "
+                f"Najprej zaženi compute_disruption_index()."
+            )
+
+        sub = df[[cd_col, citation_col, title_col]].dropna(subset=[cd_col, citation_col])
+        x = sub[cd_col].astype(float).values
+        y = sub[citation_col].astype(float).values
+
+        # Median split za kvadrante
+        x_med = float(np.median(x))
+        y_med = float(np.median(y[y > 0])) if (y > 0).any() else 0.0
+
+        fig, ax = plt.subplots(figsize=figsize)
+        scatter = ax.scatter(
+            x, y, alpha=0.35, s=8, c="steelblue", edgecolors="none"
+        )
+        # Quadrant lines
+        ax.axvline(x_med, color="grey", linestyle="--", linewidth=1)
+        ax.axhline(y_med, color="grey", linestyle="--", linewidth=1)
+
+        # Quadrant labels (corner annotations)
+        xlim = ax.get_xlim()
+        ylim_max = max(y.max() * 1.1, y_med * 2)
+        ax.annotate("Paradigm-shifters\n(high cite × high CD)",
+                    xy=(xlim[1], ylim_max), xytext=(-8, -8),
+                    textcoords="offset points",
+                    ha="right", va="top",
+                    fontsize=10, color="darkred", alpha=0.7)
+        ax.annotate("Consolidating\n(high cite × low CD)",
+                    xy=(xlim[0], ylim_max), xytext=(8, -8),
+                    textcoords="offset points",
+                    ha="left", va="top",
+                    fontsize=10, color="navy", alpha=0.7)
+        ax.annotate("Trivial\n(low cite × low CD)",
+                    xy=(xlim[0], 1), xytext=(8, 8),
+                    textcoords="offset points",
+                    ha="left", va="bottom",
+                    fontsize=9, color="grey", alpha=0.7)
+        ax.annotate("Niche / potential\n(low cite × high CD)",
+                    xy=(xlim[1], 1), xytext=(-8, 8),
+                    textcoords="offset points",
+                    ha="right", va="bottom",
+                    fontsize=9, color="darkgreen", alpha=0.7)
+
+        # Top n_label by cite × |CD| in upper right quadrant
+        sub_top = sub[(sub[cd_col] > x_med) & (sub[citation_col] > y_med)].copy()
+        sub_top["score"] = sub_top[citation_col] * sub_top[cd_col].abs()
+        sub_top = sub_top.sort_values("score", ascending=False).head(n_label)
+        for _, r in sub_top.iterrows():
+            label = str(r[title_col])
+            if len(label) > 50:
+                label = label[:47] + "…"
+            ax.annotate(
+                label,
+                xy=(r[cd_col], r[citation_col]),
+                xytext=(5, 5), textcoords="offset points",
+                fontsize=7.5, color="darkred", alpha=0.9,
+            )
+
+        ax.set_xlabel("CD index (Funk-Owen-Wu)")
+        ax.set_ylabel(f"{citation_col}" + (" (log)" if log_y else ""))
+        ax.set_title("Disruption × citation impact "
+                     "(top-right = paradigm-shifters)")
+        if log_y:
+            ax.set_yscale("symlog", linthresh=1)
+        ax.grid(False)
+        fig.tight_layout()
+
+        # Save
+        if getattr(self, "res_folder", None) and filename:
+            plots_dir = os.path.join(self.res_folder, "plots")
+            os.makedirs(plots_dir, exist_ok=True)
+            fig.savefig(os.path.join(plots_dir, f"{filename}.png"),
+                        dpi=getattr(self, "dpi", 200), bbox_inches="tight")
+        plt.close(fig)
+        return sub_top  # vrni top zapise
+
+
     def plot_average_citations_per_year(self, filename_base="average citations per document", **kwargs):
         """Plot average citations per document by publication year.
 
@@ -1243,8 +1415,6 @@ class BiblioPlot(BiblioStats):
         matplotlib.figure.Figure
         """
         import os
-        import re
-        import numpy as np
         import pandas as pd
     
         d = self.mapping[items.lower()]
@@ -1392,7 +1562,6 @@ class BiblioPlot(BiblioStats):
             The created figure.
         """
         import os
-        import re
     
         # Resolve mapping-driven inputs
         v = self.mapping[items]["time production var"]
@@ -1584,7 +1753,6 @@ class BiblioPlot(BiblioStats):
             {'overlay': (fig, ax, pos), 'partition:<attr>': (fig, ax, pos), ...}
         """
         import os
-        import re
         import matplotlib.pyplot as plt
         from biblium import plotbib
         try:
@@ -2425,7 +2593,6 @@ class BiblioPlot(BiblioStats):
         plotly.graph_objects.Figure
             The Sankey figure.
         """
-        import os, re
         from pathlib import Path
     
         # ---------- helpers ----------
@@ -2568,7 +2735,7 @@ class BiblioPlot(BiblioStats):
         return fig
 
 
-    def plot_country_collaboration(self, top_n_pairs=20, connect_threshold=1, top_n_countries=20, annotate_heatmap=True, figsizes={"pairs": (10,6), "network": (12,12), "heatmap": (12,10)}, filename="country collaboration", **kwargs):
+    def plot_country_collaboration(self, top_n_pairs=20, connect_threshold=1, top_n_countries=20, annotate_heatmap=True, figsizes={"pairs": (10,6), "network": (14,10), "heatmap": (12,10)}, filename="country collaboration", network_top_n=40, network_color_by_continent=True, network_label_fontsize=9, **kwargs):
         
         """Plot several views of international collaboration between countries.
 
@@ -2591,7 +2758,16 @@ class BiblioPlot(BiblioStats):
         """
         filename = os.path.join(self.res_folder, "plots", filename)
         plotbib.plot_top_country_pairs(self.country_collab_matrix, top_n=top_n_pairs, figsize=figsizes["pairs"], filename_base=filename + "top pairs")
-        plotbib.plot_country_collab_network(self.country_collab_matrix, threshold=connect_threshold, figsize=figsizes["network"], layout_func="spring", filename_base=filename + "network")
+        plotbib.plot_country_collab_network(
+            self.country_collab_matrix,
+            threshold=connect_threshold,
+            figsize=figsizes["network"],
+            layout_func="kamada_kawai",
+            top_n=network_top_n,
+            color_by_continent=network_color_by_continent,
+            label_fontsize=network_label_fontsize,
+            filename_base=filename + "network",
+        )
         plotbib.plot_country_collab_heatmap(self.country_collab_matrix, top_n=top_n_countries, figsize=figsizes["heatmap"], cmap=self.cmap, annotate=annotate_heatmap, filename_base=filename + "heatmap")
         plotbib.plot_country_collab_heatmap(self.country_collab_matrix_norm, top_n=top_n_countries, figsize=figsizes["heatmap"], cmap=self.cmap, annotate=annotate_heatmap, filename_base=filename + "heatmap normalized")
         #self.plot_coocurence_network("all countries", **kwargs)
@@ -2735,8 +2911,8 @@ class BiblioPlot(BiblioStats):
             return (
                 hasattr(obj, "ca_row_coords")
                 and hasattr(obj, "ca_col_coords")
-                and getattr(obj, "ca_row_coords") is not None
-                and getattr(obj, "ca_col_coords") is not None
+                and obj.ca_row_coords is not None
+                and obj.ca_col_coords is not None
             )
     
         if R is None or not _has_ca_stats(R):
@@ -3760,28 +3936,63 @@ class BiblioGroupPlot(BiblioGroup):
             )
     
         df = stats_df.copy()
-    
+
         item_col = mapping_entry.get("label", "Item")
         group_col = mapping_entry.get("group column", "Group")
-    
+
         def _ensure_column(data: pd.DataFrame, name: str) -> pd.DataFrame:
             """Ensure that *name* is a column (promote index level if needed)."""
             if name in data.columns:
                 return data
-    
+
             if isinstance(data.index, pd.MultiIndex):
                 if name in data.index.names:
                     return data.reset_index(level=name)
             else:
                 if data.index.name == name:
                     return data.reset_index()
-    
+
             raise KeyError(
                 f"Column or index level {name!r} not found in stats_df "
                 f"for items={items!r}."
             )
-    
-        # Make sure group and item are columns
+
+        def _maybe_wide_to_long(data: pd.DataFrame) -> pd.DataFrame:
+            """If stats_df is in WIDE format ({Group} - {Metric} columns),
+            reshape to LONG (rows = item × group, cols = metric)."""
+            sep = " - "
+            wide_cols = [c for c in data.columns
+                         if isinstance(c, str) and sep in c]
+            if not wide_cols or item_col not in data.columns:
+                return data
+            # Try to detect: if MOST non-item cols match pattern, assume wide
+            non_item_cols = [c for c in data.columns if c != item_col
+                             and c != "index"]
+            if len(wide_cols) < 0.5 * len(non_item_cols):
+                return data
+            # Drop "index" column if it exists (artefact of reset_index)
+            keep = [item_col] + wide_cols
+            d = data[keep].copy()
+            melted = d.melt(id_vars=[item_col], var_name="__gm__",
+                            value_name="__val__")
+            split = melted["__gm__"].str.split(sep, n=1, expand=True)
+            melted[group_col] = split[0]
+            melted["__metric__"] = split[1]
+            melted = melted.drop(columns=["__gm__"])
+            long_df = melted.pivot_table(
+                index=[item_col, group_col],
+                columns="__metric__",
+                values="__val__",
+                aggfunc="first",
+            ).reset_index()
+            long_df.columns.name = None
+            return long_df
+
+        # Make sure group and item are columns; if not, try wide → long reshape
+        if group_col not in df.columns and (
+            not isinstance(df.index, pd.MultiIndex) or group_col not in df.index.names
+        ):
+            df = _maybe_wide_to_long(df)
         df = _ensure_column(df, group_col)
         df = _ensure_column(df, item_col)
     
@@ -4276,6 +4487,120 @@ class BiblioGroupPlot(BiblioGroup):
             **kwds,
         )
 
+    def plot_associations_bipartite_network(
+        self,
+        items,
+        *,
+        filename_base: str | None = None,
+        n_top: int | None = None,
+        **kwargs,
+    ):
+        """
+        Bipartite network plot: groups (left) ↔ entities (right) with edges
+        weighted by chi-square residuals or co-occurrence count.
+
+        Uses the Relation object stored in ``self.{items}_associations``
+        (created by :meth:`associate_items`). Falls back to recomputing
+        the association with ``include_stats=("bipartite network", ...)``
+        if the bipartite graph is not yet available.
+
+        Parameters
+        ----------
+        items : str
+            Domain key passed to associate_items (snake_case).
+        filename_base : str, optional
+            Output base path. Default: ``<res_folder>/relations/{items}_bipartite``.
+        n_top : int, optional
+            If set, restrict the network to the top-N entities by total
+            edge weight (useful for readability with many entities).
+        **kwargs :
+            Forwarded to ``plotbib.plot_bipartite_network`` (e.g. node_size_scale,
+            edge_alpha, weight_threshold, figsize, title, row_label_name,
+            col_label_name).
+        """
+        import os
+        from biblium import plotbib
+
+        items_key = items.replace(" ", "_")
+        # Locate association
+        assoc_attr = None
+        if hasattr(self, "mapping") and items_key in self.mapping:
+            assoc_attr = self.mapping[items_key].get("associations")
+        assoc_attr = assoc_attr or f"{items_key}_associations"
+
+        R = getattr(self, assoc_attr, None)
+        if R is None:
+            raise AttributeError(
+                f"Association object '{assoc_attr}' not found. "
+                f"Run associate_items(domain_key='{items}', ...) first."
+            )
+
+        # Ensure bipartite graph is on the Relation; try to compute if missing.
+        G = getattr(R, "bipartite_graph", None)
+        if G is None:
+            # Try to construct a simple bipartite graph from the contingency table
+            import networkx as nx
+            cont = getattr(R, "rm", None) or getattr(R, "contingency", None)
+            if cont is None:
+                raise AttributeError(
+                    f"Relation '{assoc_attr}' has no bipartite_graph and no "
+                    f"contingency table. Re-run associate_items(...)."
+                )
+            G = nx.Graph()
+            row_nodes = list(cont.index)
+            col_nodes = list(cont.columns)
+            G.add_nodes_from(row_nodes, bipartite=0)
+            G.add_nodes_from(col_nodes, bipartite=1)
+            # Use chi2 standardized residuals for edge weight if available;
+            # otherwise raw count.
+            weight_src = getattr(R, "chi2_residuals", None)
+            for r in row_nodes:
+                for c in col_nodes:
+                    if weight_src is not None and r in weight_src.index and c in weight_src.columns:
+                        w = float(weight_src.loc[r, c])
+                    else:
+                        w = float(cont.loc[r, c])
+                    if w != 0 and not (w != w):  # skip 0 and NaN
+                        G.add_edge(r, c, weight=w)
+            R.bipartite_graph = G
+
+        graph_nodes = set(G.nodes())
+        # Determine row/col by attribute or by Relation's known structure
+        cont = getattr(R, "rm", None) or getattr(R, "contingency", None)
+        row_nodes = [n for n in (cont.index if cont is not None else []) if n in graph_nodes]
+        col_nodes = [n for n in (cont.columns if cont is not None else []) if n in graph_nodes]
+        if not row_nodes or not col_nodes:
+            row_nodes = [n for n, d in G.nodes(data=True) if d.get("bipartite") == 0]
+            col_nodes = [n for n, d in G.nodes(data=True) if d.get("bipartite") == 1]
+
+        # Optional: keep only top-N entities by sum of edge weights
+        if n_top and n_top > 0 and len(col_nodes) > n_top:
+            entity_strength = {
+                c: sum(abs(G[r][c].get("weight", 0)) for r in row_nodes if G.has_edge(r, c))
+                for c in col_nodes
+            }
+            top_cols = sorted(entity_strength, key=entity_strength.get, reverse=True)[:n_top]
+            keep = set(row_nodes) | set(top_cols)
+            G = G.subgraph(keep).copy()
+            col_nodes = top_cols
+
+        eff_dpi = kwargs.pop("dpi", getattr(self, "dpi", 600))
+
+        if filename_base is None and getattr(self, "res_folder", None):
+            os.makedirs(os.path.join(self.res_folder, "relations"), exist_ok=True)
+            filename_base = os.path.join(
+                self.res_folder, "relations", f"{items_key}_bipartite"
+            )
+
+        plotbib.plot_bipartite_network(
+            B=G,
+            row_nodes=row_nodes,
+            col_nodes=col_nodes,
+            filename_base=filename_base,
+            dpi=eff_dpi,
+            **kwargs,
+        )
+
     def plot_associations_correspondence_analysis(
         self,
         items,
@@ -4354,9 +4679,9 @@ class BiblioGroupPlot(BiblioGroup):
                 cont_num, n_components=n_components, clean_zeros=clean_zeros
             )
             # Cache back on the assoc object for reuse
-            setattr(assoc, "ca_row_coords", row_c)
-            setattr(assoc, "ca_col_coords", col_c)
-            setattr(assoc, "ca_explained_inertia", inertia)
+            assoc.ca_row_coords = row_c
+            assoc.ca_col_coords = col_c
+            assoc.ca_explained_inertia = inertia
     
         # Prepare filename in relations/
         if filename_base is not None and getattr(self, "res_folder", None):
@@ -4632,7 +4957,6 @@ class DisruptionPlotMixin:
             raise ValueError("No disruption data. Run compute_disruption_index() first.")
         
         import matplotlib.pyplot as plt
-        import numpy as np
         from biblium.disruption import aggregate_disruption_by_entity
         
         # Get entity column and dataframe
@@ -4769,7 +5093,6 @@ class DisruptionPlotMixin:
             raise ValueError("No disruption data. Run compute_disruption_index() first.")
         
         import matplotlib.pyplot as plt
-        import numpy as np
         from biblium.disruption import aggregate_disruption_by_entity
         
         year_col = self.mapping.get("Year", "Year")

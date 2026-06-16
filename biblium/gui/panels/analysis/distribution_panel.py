@@ -9,10 +9,9 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import threading
 import pandas as pd
-import numpy as np
 
 from biblium.gui.panels.base import BasePanel
-from biblium.gui.config import FONTS, LAYOUT, get_theme
+from biblium.gui.config import FONTS
 from biblium.gui.widgets.buttons import ActionButton
 from biblium.gui.widgets.cards import Card
 from biblium.gui.widgets.plots import ScaledImageFrame
@@ -443,7 +442,7 @@ OPTIONS
             except Exception as e:
                 import traceback
                 print(f"ERROR: {traceback.format_exc()}")
-                self.after(0, lambda: self._on_error(str(e)))
+                self.after(0, lambda msg=str(e): self._on_error(msg))
         
         threading.Thread(target=do_analysis, daemon=True).start()
     

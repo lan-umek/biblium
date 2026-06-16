@@ -28,32 +28,19 @@ from __future__ import annotations
 
 import os
 import re
-import warnings
-from collections import Counter, defaultdict
+from collections import Counter
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union, Set
-from itertools import combinations
+from typing import Any, Dict, List, Optional, Tuple, Set
 import json
-import pickle
 
 import numpy as np
 import pandas as pd
-from scipy.stats import entropy, spearmanr, pearsonr
-from scipy.spatial.distance import cosine, jensenshannon, cdist
-from scipy.cluster.hierarchy import linkage, fcluster
+from scipy.stats import entropy
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from sklearn.decomposition import LatentDirichletAllocation, NMF
 from sklearn.metrics.pairwise import cosine_similarity
-from sklearn.preprocessing import normalize
 
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-from matplotlib.colors import Normalize, LinearSegmentedColormap, to_rgba
-from matplotlib.cm import ScalarMappable
-from matplotlib.lines import Line2D
-from matplotlib.patches import FancyArrowPatch, Rectangle, FancyBboxPatch, Polygon
-from matplotlib.collections import LineCollection, PolyCollection
-import matplotlib.patheffects as path_effects
 import seaborn as sns
 
 # Optional imports with fallbacks
@@ -307,7 +294,7 @@ def preprocess_documents(
         stopwords = {
             'a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'for', 'from',
             'has', 'he', 'in', 'is', 'it', 'its', 'of', 'on', 'that', 'the',
-            'to', 'was', 'were', 'will', 'with', 'the', 'this', 'but', 'they',
+            'to', 'was', 'were', 'will', 'with', 'this', 'but', 'they',
             'have', 'had', 'what', 'when', 'where', 'who', 'which', 'why', 'how',
             'all', 'each', 'every', 'both', 'few', 'more', 'most', 'other',
             'some', 'such', 'than', 'too', 'very', 'can', 'just', 'should',
@@ -1432,7 +1419,6 @@ def plot_topic_evolution(
     """
     fig, ax = plt.subplots(figsize=figsize)
     ax.grid(False)
-    ax.grid(False)
     
     periods = result.periods
     x = np.arange(len(periods))
@@ -1513,7 +1499,6 @@ def plot_topic_heatmap(
     
     fig, ax = plt.subplots(figsize=figsize)
     ax.grid(False)
-    ax.grid(False)
     
     sns.heatmap(plot_df, cmap=cmap, annot=True, fmt='.3f', ax=ax,
                cbar_kws={'label': 'Prevalence'})
@@ -1546,7 +1531,6 @@ def plot_topic_river(
     Plot streamgraph/river plot of topic evolution.
     """
     fig, ax = plt.subplots(figsize=figsize)
-    ax.grid(False)
     ax.grid(False)
     
     periods = result.periods
@@ -1619,7 +1603,6 @@ def plot_topic_words_evolution(
     
     fig, ax = plt.subplots(figsize=figsize)
     ax.grid(False)
-    ax.grid(False)
     
     # Build word presence matrix
     all_words = set()
@@ -1636,7 +1619,7 @@ def plot_topic_words_evolution(
             word_matrix[i, j] = word_weights.get(word, 0)
     
     # Plot heatmap
-    im = ax.imshow(word_matrix, aspect='auto', cmap=cmap)
+    im = ax.imshow(word_matrix, aspect='auto', cmap=CMAP_CONTINUOUS)
     
     ax.set_xticks(range(len(active_periods)))
     ax.set_xticklabels(active_periods, rotation=45, ha='right')
@@ -1724,9 +1707,6 @@ def plot_topic_wordclouds(
         title = f"Topic {topic_id}: {tevol.label[:50]}"
     fig.suptitle(title, fontsize=14, fontweight='bold', y=1.02)
     
-    # Disable grids
-    for _ax in axes.flat:
-        _
     plt.tight_layout()
     
     if save_path:
@@ -1749,7 +1729,6 @@ def plot_topic_trajectory_types(
     )
     
     fig, ax = plt.subplots(figsize=figsize)
-    ax.grid(False)
     ax.grid(False)
     
     # Bar chart
@@ -1844,11 +1823,10 @@ def plot_topic_similarity_matrix(
     
     fig, ax = plt.subplots(figsize=figsize)
     ax.grid(False)
-    ax.grid(False)
     
     labels = [f"T{tid}" for tid, _ in active_topics]
     
-    im = ax.imshow(sim_matrix, cmap=cmap, vmin=0, vmax=1)
+    im = ax.imshow(sim_matrix, cmap=CMAP_CONTINUOUS, vmin=0, vmax=1)
     
     ax.set_xticks(range(n))
     ax.set_xticklabels(labels, rotation=45, ha='right')
@@ -1868,9 +1846,6 @@ def plot_topic_similarity_matrix(
         title = f"Topic Similarity Matrix ({period})"
     ax.set_title(title, fontsize=14, fontweight='bold')
     
-    # Disable grids
-    for _ax in axes.flat:
-        _
     plt.tight_layout()
     
     if save_path:

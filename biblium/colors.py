@@ -7,8 +7,7 @@ Provides consistent colors across all visualizations.
 @author: Lan.Umek
 """
 
-from typing import Dict, List, Optional, Union
-import numpy as np
+from typing import Dict, List
 
 # =============================================================================
 # MAIN COLOR PALETTES

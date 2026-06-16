@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from typing import (
     Any,
-    Callable,
     Dict,
     Iterable,
     List,
@@ -26,7 +25,6 @@ import os
 import pandas as pd
 import re
 from biblium import readbib
-from biblium import reportbib
 from biblium import utilsbib
 from biblium.base import BiblioBase
 from biblium.bibplot_modules.race_bar import RaceBarMixin
@@ -265,7 +263,10 @@ class BiblioStats(BiblioBase, RaceBarMixin, AdvancedVisualizationsMixin, Disrupt
         self.concept_df = concept_df
     
         self.n = len(self.df)
-        if label_docs:
+        # 'Doc ID' is required when preprocess_level >= 1 (used by
+        # add_document_labels_abbrev / set_index('Doc ID')); add it whenever
+        # missing rather than crashing if label_docs=False but level>=1.
+        if label_docs or (preprocess_level >= 1 and "Doc ID" not in self.df.columns):
             self.df["Doc ID"] = [f"Doc {i}" for i in range(1, self.n + 1)]
     
         if ("Source title" in self.df.columns) and (
@@ -802,7 +803,7 @@ class BiblioStats(BiblioBase, RaceBarMixin, AdvancedVisualizationsMixin, Disrupt
             inv_iso_map = {v: k for k, v in iso_map.items()} if isinstance(iso_map, dict) else {}
             expanded_allowed = set(allowed)
             expanded_allowed.update(iso_map.get(a, None) for a in allowed if a in iso_map)
-            expanded_allowed.update(inv_iso_map.get(a, None) for a in allowed if a in inv_iso_map)
+            expanded_allowed.update(inv_iso_map.get(a) for a in allowed if a in inv_iso_map)
             allowed_labels = {str(x).strip() for x in expanded_allowed if x is not None}
 
             # Helper to subset a square DataFrame by labels present in index/columns
@@ -844,6 +845,86 @@ class BiblioStats(BiblioBase, RaceBarMixin, AdvancedVisualizationsMixin, Disrupt
         elif links_df:
             # No country data - initialize empty DataFrame
             self.countries_links_df = pd.DataFrame(columns=["source", "target", "weight"])
+
+    def get_institution_collaboration(
+        self,
+        institutions_col: str = "oa_institutions",
+        sep: str = "; ",
+        normalization: str = "jaccard",
+        links_df: bool = True,
+        min_weight: int = 1,
+        top_n: int | None = None,
+    ) -> None:
+        """
+        Build institution collaboration matrices (raw and optionally normalized)
+        plus a links DataFrame. Generic over any multi-valued column
+        (default: ``oa_institutions`` from OpenAlex enrichment with sep="; ";
+        also works for ``oa_institution_rors`` with sep="|" for ROR-disambiguated
+        institution IDs).
+
+        Parameters
+        ----------
+        institutions_col : str, default "oa_institutions"
+            Column holding a separator-joined list of institution names/IDs per record.
+            Common choices:
+              - "oa_institutions"      (OpenAlex display names, sep="; ")
+              - "oa_institution_rors"  (ROR IDs, sep="|")
+        sep : str, default "; "
+            Delimiter between institutions within each cell.
+        normalization : str or None, default "jaccard"
+            Method passed to ``utilsbib.normalize_symmetric_matrix``. None to skip.
+        links_df : bool, default True
+            If True, builds ``self.institutions_links_df`` from the raw matrix.
+        min_weight : int, default 1
+            Minimum edge weight when constructing links.
+        top_n : int or None, default None
+            If given, restricts the matrix to the top-N institutions by total
+            collaborations (sum of row). Useful for dense corpora.
+
+        Notes
+        -----
+        Sets the following attributes:
+          - ``self.institution_collab_matrix``       (square DataFrame, raw counts)
+          - ``self.institution_collab_matrix_norm``  (square DataFrame, normalized)
+          - ``self.institutions_links_df``           (long-form edges if requested)
+        """
+        if institutions_col not in self.df.columns:
+            print(
+                self.ldf(f"Column '{institutions_col}' not found in df; "
+                         f"institution collaboration cannot be computed.")
+            )
+            self.institution_collab_matrix = None
+            self.institution_collab_matrix_norm = None
+            self.institutions_links_df = pd.DataFrame(columns=["source", "target", "weight"])
+            return
+
+        # The country-collab matrix builder is generic over any multi-valued
+        # separated column — reuse it for institutions.
+        self.institution_collab_matrix = utilsbib.compute_openalex_country_collaboration_matrix(
+            self.df,
+            column=institutions_col,
+            sep=sep,
+        )
+
+        # Optional top-N filter (square subset) — guards against blow-up
+        if top_n is not None and self.institution_collab_matrix is not None \
+                and not self.institution_collab_matrix.empty:
+            totals = self.institution_collab_matrix.sum(axis=1).sort_values(ascending=False)
+            keep = totals.head(top_n).index.tolist()
+            self.institution_collab_matrix = self.institution_collab_matrix.loc[keep, keep]
+
+        self.institution_collab_matrix_norm = None
+        if normalization is not None and self.institution_collab_matrix is not None:
+            self.institution_collab_matrix_norm = utilsbib.normalize_symmetric_matrix(
+                self.institution_collab_matrix, method=normalization
+            )
+
+        if links_df and self.institution_collab_matrix is not None:
+            self.institutions_links_df = utilsbib.build_links_from_matrix(
+                self.institution_collab_matrix, min_weight=min_weight
+            )
+        else:
+            self.institutions_links_df = pd.DataFrame(columns=["source", "target", "weight"])
 
     def compute_interdisciplinarity_entropy(
         self,
@@ -1266,6 +1347,9 @@ class BiblioStats(BiblioBase, RaceBarMixin, AdvancedVisualizationsMixin, Disrupt
         plot_comparison: bool = False,
         filename: Optional[str] = None,
         cmap: str = "RdBu",
+        year_range: Optional[Tuple[int, int]] = None,
+        annotate: Optional[bool] = None,
+        cut_point: Optional[int] = None,
     ) -> pd.DataFrame:
         """
         Analyze relative representation of your dataset compared to a reference distribution.
@@ -1298,7 +1382,19 @@ class BiblioStats(BiblioBase, RaceBarMixin, AdvancedVisualizationsMixin, Disrupt
             Base filename for saving (without extension).
         cmap : str, default "RdBu"
             Colormap for difference plot (red=under, blue=over).
-        
+        annotate : bool, optional
+            Whether to print per-bar value labels on the difference plot.
+            If None (default), labels are shown only when there are <= 20
+            categories; longer ranges (e.g. many years) are left unlabelled
+            so the figure stays readable -- the exact numbers remain in the
+            saved Excel table.
+        cut_point : int, optional
+            Only for category="Year". If given, all years strictly before
+            `cut_point` are collapsed into a single left-most "before <year>"
+            bucket (both observed and reference are aggregated the same way).
+            Useful to keep the figure compact when early years carry little
+            mass. If None (default), every year is kept separate.
+
         Returns
         -------
         pd.DataFrame
@@ -1340,8 +1436,6 @@ class BiblioStats(BiblioBase, RaceBarMixin, AdvancedVisualizationsMixin, Disrupt
                 plot_distribution_comparison,
                 SUPPORTED_REFERENCES,
                 fetch_openalex_yearly_counts,
-                fetch_openalex_country_counts,
-                fetch_openalex_sdg_counts,
             )
         
         # Map category aliases
@@ -1373,49 +1467,97 @@ class BiblioStats(BiblioBase, RaceBarMixin, AdvancedVisualizationsMixin, Disrupt
                 actual_col = candidate
                 break
         
+        # If year_range is given AND "Year" column exists, restrict the
+        # working df to that range before computing observed for any category.
+        # This way Country/OA/SDG distributions reflect the same time window
+        # as the OpenAlex reference (which is fetched for the same year range).
+        df_work = self.df
+        if year_range is not None and "Year" in self.df.columns:
+            yr_lo, yr_hi = int(year_range[0]), int(year_range[1])
+            yr_num = pd.to_numeric(self.df["Year"], errors="coerce")
+            df_work = self.df[(yr_num >= yr_lo) & (yr_num <= yr_hi)]
+            print(f"Year range filter: restricting df to {yr_lo}-{yr_hi} "
+                  f"({len(df_work):,} of {len(self.df):,} docs)")
+
         # Special handling for SDG - multiple binary columns
         if category_normalized == "SDG":
-            sdg_cols = [c for c in self.df.columns if c.startswith("SDG") and len(c) <= 5 and c[3:].isdigit()]
+            sdg_cols = [c for c in df_work.columns if c.startswith("SDG") and len(c) <= 5 and c[3:].isdigit()]
             if not sdg_cols:
                 raise ValueError("No SDG columns found (SDG01-SDG17). Run ba.identify_sdgs() first.")
-            
+
             # Sum each SDG column to get counts
             sdg_counts = {}
             for col in sorted(sdg_cols):
                 sdg_num = int(col[3:])
                 sdg_label = f"SDG {sdg_num}"
-                sdg_counts[sdg_label] = self.df[col].sum()
-            
+                sdg_counts[sdg_label] = df_work[col].sum()
+
             observed = pd.DataFrame(list(sdg_counts.items()), columns=["SDG", "Count"])
             actual_col = "SDG"  # For consistency
         elif actual_col is None:
             raise ValueError(f"Category '{category}' not found. Available: {self.df.columns.tolist()}")
         # Handle list-type columns (like Countries)
-        elif self.df[actual_col].dtype == object and self.df[actual_col].str.contains(self.default_separator, na=False).any():
+        elif df_work[actual_col].dtype == object and df_work[actual_col].str.contains(self.default_separator, na=False).any():
             # Split and explode
-            exploded = self.df[actual_col].str.split(self.default_separator).explode().str.strip()
+            exploded = df_work[actual_col].str.split(self.default_separator).explode().str.strip()
             exploded = exploded[exploded != ""]
             observed = exploded.value_counts().reset_index()
             observed.columns = [category_normalized, "Count"]
         else:
-            observed = self.df[actual_col].value_counts().reset_index()
+            observed = df_work[actual_col].value_counts().reset_index()
             observed.columns = [category_normalized, "Count"]
-        
+
+        # Open Access — Scopus uses fine-grained labels (Gold, Green, Bronze,
+        # Hybrid Gold, All Open Access), OpenAlex reference is binary
+        # (Open Access vs Closed). Aggregate observed to binary so they match.
+        # Trigger only when category is OA AND we'll auto-fetch OA reference.
+        if category_normalized == "Open Access" and (reference_df is None and fetch_reference):
+            # In Scopus, having any OA tag = Open Access; missing = Closed.
+            oa_col = actual_col
+            has_oa = (
+                df_work[oa_col].notna()
+                & (df_work[oa_col].astype(str).str.strip() != "")
+            )
+            n_oa = int(has_oa.sum())
+            n_closed = int(len(df_work) - n_oa)
+            observed = pd.DataFrame({
+                category_normalized: ["Open Access", "Closed"],
+                "Count": [n_oa, n_closed],
+            })
+            print(f"Open Access aggregation: {n_oa:,} OA / {n_closed:,} Closed "
+                  f"(from {len(df_work):,} docs)")
+
+        # Year-range filtering on the observed itself (Year category only).
+        # df_work is already filtered above for non-Year categories, but Year
+        # observed is built from df_work via value_counts on "Year", so apply
+        # the same filter to the observed rows for consistency.
+        if year_range is not None and category_normalized == "Year":
+            yr_lo, yr_hi = int(year_range[0]), int(year_range[1])
+            observed = observed[
+                (pd.to_numeric(observed[category_normalized], errors="coerce") >= yr_lo)
+                & (pd.to_numeric(observed[category_normalized], errors="coerce") <= yr_hi)
+            ].reset_index(drop=True)
+
         # Get reference distribution
         if reference_df is None and fetch_reference:
             if category_normalized in SUPPORTED_REFERENCES:
                 info = SUPPORTED_REFERENCES[category_normalized]
                 print(f"Fetching global {category_normalized} data from OpenAlex...")
-                
-                # Get year range for filtering
-                year_range = None
-                if "Year" in self.df.columns:
-                    year_range = (int(self.df["Year"].min()), int(self.df["Year"].max()))
-                
+
+                # Determine year range for OpenAlex fetch
+                fetch_year_range = None
+                if year_range is not None:
+                    fetch_year_range = (int(year_range[0]), int(year_range[1]))
+                elif "Year" in self.df.columns:
+                    fetch_year_range = (int(self.df["Year"].min()),
+                                        int(self.df["Year"].max()))
+
                 if category_normalized == "Year":
-                    reference_df = fetch_openalex_yearly_counts(year_range[0], year_range[1])
+                    reference_df = fetch_openalex_yearly_counts(
+                        fetch_year_range[0], fetch_year_range[1]
+                    )
                 else:
-                    reference_df = info["fetcher"](year_range=year_range)
+                    reference_df = info["fetcher"](year_range=fetch_year_range)
                 
                 print(f"Fetched {len(reference_df)} categories from OpenAlex.")
             else:
@@ -1432,7 +1574,46 @@ class BiblioStats(BiblioBase, RaceBarMixin, AdvancedVisualizationsMixin, Disrupt
         ref_cat_col = [c for c in reference_df.columns if c not in ["Count", "Percentage", "_key"]][0]
         if ref_cat_col != category_normalized:
             reference_df = reference_df.rename(columns={ref_cat_col: category_normalized})
-        
+
+        # Apply year_range to reference_df too, in case caller passed custom one
+        # (auto-fetched OpenAlex is already in range, but a manual ref_df may not be).
+        if year_range is not None and category_normalized == "Year":
+            yr_lo, yr_hi = int(year_range[0]), int(year_range[1])
+            yr_num = pd.to_numeric(reference_df[category_normalized], errors="coerce")
+            reference_df = reference_df[(yr_num >= yr_lo) & (yr_num <= yr_hi)].reset_index(drop=True)
+
+        # Optionally collapse all years before `cut_point` into one left-most
+        # "before <year>" bucket. The same aggregation is applied to observed
+        # and reference so the percentage-point comparison stays consistent.
+        _before_label = None
+        if cut_point is not None and category_normalized == "Year":
+            cp = int(cut_point)
+            _before_label = f"before {cp}"
+
+            def _collapse_before(frame: pd.DataFrame, cnt_col: str) -> pd.DataFrame:
+                yr = pd.to_numeric(frame[category_normalized], errors="coerce")
+                pre = frame.loc[yr < cp]
+                post = frame.loc[yr >= cp].copy()
+                # category column becomes string so the "before" label and the
+                # individual years can coexist in one column without dtype clash
+                post[category_normalized] = (
+                    pd.to_numeric(post[category_normalized])
+                    .astype(int).astype(str)
+                )
+                parts = []
+                if len(pre) > 0:
+                    parts.append(pd.DataFrame({
+                        category_normalized: [_before_label],
+                        cnt_col: [pre[cnt_col].sum()],
+                    }))
+                parts.append(post[[category_normalized, cnt_col]])
+                return pd.concat(parts, ignore_index=True)
+
+            observed = _collapse_before(observed, "Count")
+            reference_df = _collapse_before(reference_df, "Count")
+            print(f"Cut point {cp}: collapsed pre-{cp} years into "
+                  f"'{_before_label}'.")
+
         # Compute relative representation
         self.relative_representation_df = compute_relative_representation(
             observed, reference_df,
@@ -1441,7 +1622,18 @@ class BiblioStats(BiblioBase, RaceBarMixin, AdvancedVisualizationsMixin, Disrupt
             ref_count_col="Count",
             threshold=threshold,
         )
-        
+
+        # Force the collapsed "before <year>" bucket to be the left-most row
+        # (compute_relative_representation sorts numerically, which would
+        # otherwise interleave it with the cut-point year).
+        if _before_label is not None:
+            rr = self.relative_representation_df
+            is_before = rr[category_normalized].astype(str) == _before_label
+            if is_before.any():
+                self.relative_representation_df = pd.concat(
+                    [rr[is_before], rr[~is_before]], ignore_index=True
+                )
+
         # Summary
         over = (self.relative_representation_df["Difference (pp)"] > threshold).sum()
         under = (self.relative_representation_df["Difference (pp)"] < -threshold).sum()
@@ -1456,12 +1648,21 @@ class BiblioStats(BiblioBase, RaceBarMixin, AdvancedVisualizationsMixin, Disrupt
         # Plot difference
         if plot:
             rotation = 45 if len(self.relative_representation_df) > 10 else 0
+            # Auto-disable per-bar value labels when there are many categories
+            # (e.g. long year ranges): keeps the figure uncluttered, while the
+            # exact per-category numbers stay available in the saved Excel
+            # table. Caller can force on/off via the `annotate` argument.
+            do_annotate = (
+                annotate if annotate is not None
+                else len(self.relative_representation_df) <= 20
+            )
             plot_relative_representation(
                 self.relative_representation_df,
                 category_col=category_normalized,
                 title=f"Relative Representation: {category_normalized}",
                 cmap=cmap,
                 rotation=rotation,
+                annotate=do_annotate,
                 filename=filename,
                 dpi=self.dpi,
             )
@@ -2925,7 +3126,6 @@ class BiblioStats(BiblioBase, RaceBarMixin, AdvancedVisualizationsMixin, Disrupt
         **kwargs :
             Additional options forwarded to ``utilsbib.get_entity_stats``.
         """
-        import os
     
         # Compute stats using full affiliations, consistent with counting
         self.affiliations_stats_df, self.affiliations_indcators = utilsbib.get_entity_stats(
@@ -3529,6 +3729,10 @@ class BiblioStats(BiblioBase, RaceBarMixin, AdvancedVisualizationsMixin, Disrupt
             "top_items_col": top_items_col if top_items_col is not None else column_name,
             "top_n": top_n,
             "separator": separator,
+            # compute_cooccurrence uses ONLY the binary indicator;
+            # skip fractional/text-norm matrices to save time on large data.
+            "compute_fractional": False,
+            "compute_text_norms": False,
         }
         select_kwargs.update(kwargs)
 
@@ -4386,7 +4590,7 @@ class BiblioStats(BiblioBase, RaceBarMixin, AdvancedVisualizationsMixin, Disrupt
         concept1: str,
         concept2: str,
         *,
-        custom_matrices: dict[str, 'pd.DataFrame'] | None=None,
+        custom_matrices: dict[str, pd.DataFrame] | None=None,
         binary_key: str='binary dataframe',
         counter_key: str='counter',
         top_n: int=10,
@@ -4483,7 +4687,7 @@ class BiblioStats(BiblioBase, RaceBarMixin, AdvancedVisualizationsMixin, Disrupt
         *,
         concept1: str = "Author Keywords",
         concept2: str | None = None,
-        custom_matrices: dict[str, "pd.DataFrame"] | None = None,  # kept for compatibility, unused
+        custom_matrices: dict[str, pd.DataFrame] | None = None,  # kept for compatibility, unused
         binary_key: str = "binary dataframe",                      # unused
         counter_key: str = "counter",                              # unused
         top_n: int = 10,                                           # unused
@@ -4602,7 +4806,7 @@ class BiblioStats(BiblioBase, RaceBarMixin, AdvancedVisualizationsMixin, Disrupt
         s2 = self.df[col2].fillna("")
     
         # ---- tokenization -------------------------------------------------
-        def _tokenize(series: "pd.Series", concept: str):
+        def _tokenize(series: pd.Series, concept: str):
             """Split series into lists of tokens per document."""
             # Keywords: use default separator
             if concept in ("Author Keywords", "Index Keywords"):
@@ -5401,6 +5605,7 @@ class BiblioStats(BiblioBase, RaceBarMixin, AdvancedVisualizationsMixin, Disrupt
         stop_words: str | list[str] | None = 'english',
         min_df: int = 2,
         max_df: float = 0.95,
+        time_slices: list | None = None,
     ) -> dict:
         """
         Sequential Topic Modeling - fit separate models per time period.
@@ -5423,6 +5628,9 @@ class BiblioStats(BiblioBase, RaceBarMixin, AdvancedVisualizationsMixin, Disrupt
             Minimum document frequency.
         max_df : float, default=0.95
             Maximum document frequency.
+        time_slices : list of int, optional
+            Explicit year boundaries for time slicing (e.g., [1979, 2010, 2020, 2026]).
+            If None, biblium auto-determines window edges.
         
         Returns
         -------
@@ -5450,6 +5658,7 @@ class BiblioStats(BiblioBase, RaceBarMixin, AdvancedVisualizationsMixin, Disrupt
             text_column=col,
             time_column=time_col,
             n_topics=n_topics,
+            time_slices=time_slices,
             model_type=model_type,
             max_features=max_features,
             stop_words=stop_words,
@@ -5779,10 +5988,11 @@ class BiblioStats(BiblioBase, RaceBarMixin, AdvancedVisualizationsMixin, Disrupt
         figsize: tuple[float, float] = (14, 8),
         save_path: str | None = None,
         dpi: int = 600,
+        **kwargs,
     ):
         """
         Plot term frequency evolution.
-        
+
         Parameters
         ----------
         top_n : int, default=15
@@ -5795,12 +6005,15 @@ class BiblioStats(BiblioBase, RaceBarMixin, AdvancedVisualizationsMixin, Disrupt
             Path to save figure.
         dpi : int
             DPI for saving.
+        **kwargs :
+            Forwarded to :func:`plotbib.plot_term_evolution` (e.g.
+            ``normalize="row"`` for heatmap, ``cmap``, ``title``).
         """
         from biblium import plotbib
-        
+
         if not hasattr(self, 'term_evolution') or self.term_evolution is None or self.term_evolution.empty:
             raise ValueError("Run compute_term_evolution() first.")
-        
+
         return plotbib.plot_term_evolution(
             self.term_evolution,
             top_n=top_n,
@@ -5808,6 +6021,7 @@ class BiblioStats(BiblioBase, RaceBarMixin, AdvancedVisualizationsMixin, Disrupt
             figsize=figsize,
             save_path=save_path,
             dpi=dpi,
+            **kwargs,
         )
 
     def plot_term_trends(
@@ -6869,7 +7083,7 @@ class BiblioStats(BiblioBase, RaceBarMixin, AdvancedVisualizationsMixin, Disrupt
         
         return self.sb_summary
 
-    def get_sleeping_beauty_result(self, index: int = 0) -> "utilsbib.SleepingBeautyResult":
+    def get_sleeping_beauty_result(self, index: int = 0) -> utilsbib.SleepingBeautyResult:
         """
         Get a SleepingBeautyResult object for a specific paper.
         
@@ -7558,6 +7772,7 @@ class BiblioStats(BiblioBase, RaceBarMixin, AdvancedVisualizationsMixin, Disrupt
         authors_col: str = None,
         year_col: str = None,
         sep: str = "; ",
+        hyperauthorship_threshold: int = 10,
         verbose: bool = True,
     ) -> Dict[str, Any]:
         """
@@ -7614,6 +7829,7 @@ class BiblioStats(BiblioBase, RaceBarMixin, AdvancedVisualizationsMixin, Disrupt
             authors_col=authors_col,
             year_col=year_col,
             sep=sep,
+            hyperauthorship_threshold=hyperauthorship_threshold,
         )
         
         if verbose:
@@ -7629,6 +7845,7 @@ class BiblioStats(BiblioBase, RaceBarMixin, AdvancedVisualizationsMixin, Disrupt
             print(f"\nAuthorship:")
             print(f"  Single-author papers: {result['single_author_papers']:,} ({result['single_author_papers']/result['n_papers']*100:.1f}%)")
             print(f"  Multi-author papers: {result['multi_author_papers']:,} ({result['multi_author_papers']/result['n_papers']*100:.1f}%)")
+            print(f"  Hyperauthored papers (>= {result['hyperauthorship_threshold']} authors): {result['hyperauthored_papers']:,} ({result['hyperauthorship_rate']*100:.1f}%)")
             print(f"  Max authors on a paper: {result['max_authors']}")
             
             print(f"\nAuthor Statistics:")
@@ -8147,68 +8364,101 @@ class BiblioStats(BiblioBase, RaceBarMixin, AdvancedVisualizationsMixin, Disrupt
         self,
         top_n: int = 50,
         min_cooccur: int = 2,
+        exclude_keywords: Optional[Iterable[str]] = None,
+        kw_column: Optional[str] = None,
+        resolution: float = 1.0,
+        community_method: str = "greedy_modularity",
     ) -> nx.Graph:
         """
         Build a keyword co-occurrence network from the dataset.
-        
+
         Parameters
         ----------
         top_n : int, default 50
-            Number of top keywords to include.
+            Number of top keywords to include (after exclusion filtering).
         min_cooccur : int, default 2
             Minimum co-occurrences to create an edge.
-            
+        exclude_keywords : iterable of str, optional
+            Keywords to exclude entirely from the network. Useful for removing
+            domain meta-terms (e.g. "bibliometric*" in a bibliometrics corpus)
+            that dominate everything and produce a single giant cluster.
+            Matching is case-insensitive on the lowercased keyword.
+        kw_column : str, optional
+            Explicit keyword column. If None, prefers
+            "Processed Author Keywords" → "Author Keywords" →
+            "Processed Index Keywords" → "Index Keywords".
+        resolution : float, default 1.0
+            Resolution parameter for the community detection.
+            > 1.0 → more, smaller clusters (finer-grained partition).
+            < 1.0 → fewer, larger clusters.
+        community_method : str, default "greedy_modularity"
+            Community detection method. Options:
+                - "greedy_modularity" (NetworkX, supports resolution)
+                - "louvain" (NetworkX 2.8+, supports resolution)
+                - "label_propagation" (NetworkX, no resolution param)
+
         Returns
         -------
         nx.Graph
-            Keyword co-occurrence network.
+            Keyword co-occurrence network with `community` node attribute.
         """
         from collections import Counter, defaultdict
-        
-        kw_col = self._get_column("Author Keywords", required=False)
-        if not kw_col or kw_col not in self.df.columns:
-            kw_col = self._get_column("Index Keywords", required=False)
-        
-        if not kw_col or kw_col not in self.df.columns:
+
+        # Prefer Processed columns when present
+        if kw_column is None:
+            for cand in (
+                "Processed Author Keywords",
+                "Author Keywords",
+                "Processed Index Keywords",
+                "Index Keywords",
+            ):
+                if cand in self.df.columns:
+                    kw_column = cand
+                    break
+        if kw_column is None or kw_column not in self.df.columns:
             raise ValueError("No keyword column found in dataset")
-        
+
         year_col = self._get_column(["Year", "Publication Year", "PY"], required=False)
         sep = self.default_separator
-        
-        # Count keywords
+
+        # Normalize exclude list to lowercase
+        if exclude_keywords:
+            exclude_set = {str(k).strip().lower() for k in exclude_keywords if str(k).strip()}
+        else:
+            exclude_set = set()
+
+        # Count keywords (skipping excluded ones)
         keyword_freq = Counter()
         keyword_years = defaultdict(list)
         cooccurrence = defaultdict(int)
-        
+
         for idx, row in self.df.iterrows():
-            if pd.isna(row[kw_col]):
+            if pd.isna(row[kw_column]):
                 continue
-            
-            keywords = [k.strip().lower() for k in str(row[kw_col]).split(sep) if k.strip()]
-            
+
+            keywords = [k.strip().lower() for k in str(row[kw_column]).split(sep) if k.strip()]
+            keywords = [k for k in keywords if k not in exclude_set]
+
             for kw in keywords:
                 keyword_freq[kw] += 1
                 if year_col and year_col in self.df.columns and pd.notna(row[year_col]):
-                    # Convert year to numeric
                     try:
                         year_val = int(float(str(row[year_col])))
                         keyword_years[kw].append(year_val)
                     except (ValueError, TypeError):
                         pass
-            
-            # Co-occurrences
+
             for i, k1 in enumerate(keywords):
-                for k2 in keywords[i+1:]:
+                for k2 in keywords[i + 1:]:
                     if k1 != k2:
                         pair = tuple(sorted([k1, k2]))
                         cooccurrence[pair] += 1
-        
-        # Get top keywords
+
+        # Top keywords (after exclusion)
         top_keywords = set(k for k, _ in keyword_freq.most_common(top_n))
-        
+
         # Build network
         G = nx.Graph()
-        
         for kw in top_keywords:
             avg_year = np.mean(keyword_years[kw]) if keyword_years[kw] else 2020
             G.add_node(
@@ -8217,21 +8467,32 @@ class BiblioStats(BiblioBase, RaceBarMixin, AdvancedVisualizationsMixin, Disrupt
                 avg_year=round(avg_year, 1),
                 label=kw,
             )
-        
+
         for (k1, k2), count in cooccurrence.items():
             if k1 in top_keywords and k2 in top_keywords and count >= min_cooccur:
                 G.add_edge(k1, k2, weight=count)
-        
-        # Add community detection
+
+        # Community detection
         try:
-            from networkx.algorithms import community
-            communities = list(community.greedy_modularity_communities(G))
+            from networkx.algorithms import community as _comm
+            if community_method == "louvain" and hasattr(_comm, "louvain_communities"):
+                communities = _comm.louvain_communities(G, resolution=resolution, seed=42)
+            elif community_method == "label_propagation":
+                communities = list(_comm.label_propagation_communities(G))
+            else:  # greedy_modularity (default)
+                # NetworkX ≥3.0 supports resolution; fallback otherwise.
+                try:
+                    communities = list(_comm.greedy_modularity_communities(
+                        G, resolution=resolution
+                    ))
+                except TypeError:
+                    communities = list(_comm.greedy_modularity_communities(G))
             for i, comm in enumerate(communities):
                 for node in comm:
                     G.nodes[node]["community"] = i
-        except:
+        except Exception:
             pass
-        
+
         self.keyword_network = G
         return G
     
@@ -8239,6 +8500,7 @@ class BiblioStats(BiblioBase, RaceBarMixin, AdvancedVisualizationsMixin, Disrupt
         self,
         top_n: int = 50,
         min_cocitations: int = 2,
+        sep: str = "; ",
     ) -> nx.Graph:
         """
         Build a co-citation network from references.
@@ -8266,31 +8528,35 @@ class BiblioStats(BiblioBase, RaceBarMixin, AdvancedVisualizationsMixin, Disrupt
         
         if not ref_col:
             raise ValueError("No reference column found in dataset")
-        
-        sep = self.default_separator
-        
-        # Count references and co-citations
+
+        # References are "; "-separated full strings; do NOT use the
+        # generic item separator (a comma) — that fragments each
+        # reference into author/title/year pieces.
+
+        # Pass 1: count reference frequencies
         ref_counts = Counter()
-        cocitation = defaultdict(int)
-        
         for idx, row in self.df.iterrows():
             if pd.isna(row[ref_col]):
                 continue
-            
-            refs = [r.strip() for r in str(row[ref_col]).split(sep) if r.strip()]
-            
-            for ref in refs:
-                ref_counts[ref] += 1
-            
-            # Co-citations
-            for i, r1 in enumerate(refs):
-                for r2 in refs[i+1:]:
-                    if r1 != r2:
-                        pair = tuple(sorted([r1, r2]))
-                        cocitation[pair] += 1
-        
+            refs = [r.strip() for r in str(row[ref_col]).split(sep)
+                    if r.strip()]
+            ref_counts.update(refs)
+
         # Get top references
         top_refs = set(r for r, _ in ref_counts.most_common(top_n))
+
+        # Pass 2: count co-citations ONLY among the top references.
+        # Restricting to top_refs keeps memory bounded — counting every
+        # reference pair first blows up on large corpora.
+        cocitation = defaultdict(int)
+        for idx, row in self.df.iterrows():
+            if pd.isna(row[ref_col]):
+                continue
+            refs = sorted({r.strip() for r in str(row[ref_col]).split(sep)
+                           if r.strip() and r.strip() in top_refs})
+            for i, r1 in enumerate(refs):
+                for r2 in refs[i + 1:]:
+                    cocitation[(r1, r2)] += 1
         
         # Build network
         G = nx.Graph()
@@ -8450,15 +8716,15 @@ class BiblioStats(BiblioBase, RaceBarMixin, AdvancedVisualizationsMixin, Disrupt
         str
             Path to the created file.
         """
-        from reportlab.lib.pagesizes import letter, A4
+        from reportlab.lib.pagesizes import A4
         from reportlab.lib import colors
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
         from reportlab.lib.units import inch
         from reportlab.platypus import (
             SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
-            PageBreak, Image, KeepTogether
+            PageBreak, Image
         )
-        from reportlab.lib.enums import TA_CENTER, TA_LEFT
+        from reportlab.lib.enums import TA_CENTER
         from io import BytesIO
         from datetime import datetime
         import matplotlib

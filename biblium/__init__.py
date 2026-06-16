@@ -1,6 +1,17 @@
 """Biblium - Comprehensive Bibliometric Analysis Library"""
 
-__version__ = "2.12.0"
+__version__ = "2.16.0"
+
+# Global matplotlib style — no grid by default (po plot-quality memo, Lan)
+try:
+    import matplotlib as _mpl
+    _mpl.rcParams["axes.grid"]            = False
+    _mpl.rcParams["axes.grid.which"]      = "major"
+    _mpl.rcParams["axes.spines.top"]      = False
+    _mpl.rcParams["axes.spines.right"]    = False
+    _mpl.rcParams["grid.alpha"]           = 0.0
+except Exception:
+    pass
 
 # Logging setup (import first for other modules to use)
 from biblium import logging_config
@@ -386,6 +397,70 @@ from biblium.bibgroup import BiblioGroup
 from biblium.bibplot import BiblioPlot, BiblioGroupPlot
 from biblium.bibclass import BiblioGroupClassifier
 from biblium.biblium_main import BiblioAnalysis, BiblioGroupAnalysis
+
+# Permutation inference and Firth logistic regression (new in 2.16)
+try:
+    from biblium.utilsbib_modules.permutation import (
+        PermutationResult,
+        permutation_test,
+        assoc_permutation_test,
+        chi2_statistic,
+        cramers_v_statistic,
+        total_inertia_statistic,
+        dimension_inertias_statistic,
+        standardized_residuals_statistic,
+        adjust_p_values,
+        adaptive_n_permutations,
+        is_partition,
+    )
+    from biblium.utilsbib_modules.firth import (
+        LogitResult,
+        firth_logit,
+        mle_logit,
+        fit_logit,
+        is_design_ill_conditioned,
+        detect_separation_after_fit,
+    )
+    HAS_PERMUTATION_INFERENCE = True
+    HAS_FIRTH_LOGIT = True
+except ImportError:
+    HAS_PERMUTATION_INFERENCE = False
+    HAS_FIRTH_LOGIT = False
+
+# COBISS support (Slovenian Co-operative Online Bibliographic System) - new in 2.16
+try:
+    from biblium.utilsbib_modules.cobiss_typology import (
+        TYPOLOGY as COBISS_TYPOLOGY,
+        typology_label as cobiss_typology_label,
+        typology_to_document_type as cobiss_typology_to_document_type,
+    )
+    from biblium.utilsbib_modules.cobiss_parser import (
+        ParsedCobissRecord,
+        parse_cobiss_html,
+        records_to_dataframe as cobiss_records_to_dataframe,
+    )
+    from biblium.utilsbib_modules.cobiss_url import (
+        CobissUrlInfo,
+        classify_cobiss_url,
+        prepare_request_url,
+        is_xml_format,
+    )
+    from biblium.utilsbib_modules.cobiss_xml_parser import (
+        parse_cobiss_xml,
+    )
+    HAS_COBISS_PARSER = True
+except ImportError:
+    HAS_COBISS_PARSER = False
+
+try:
+    from biblium.cobiss_api import (
+        CobissClient,
+        CobissFetchResult,
+        fetch_personal_bibliography_to_csv,
+    )
+    HAS_COBISS_API = True
+except ImportError:
+    HAS_COBISS_API = False
 
 # Tkinter GUI (optional)
 try:

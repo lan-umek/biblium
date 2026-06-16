@@ -29,6 +29,10 @@ from biblium.bibgroup_modules.counting import GroupCountingMixin
 from biblium.bibgroup_modules.stats import GroupStatsMixin
 from biblium.bibgroup_modules.associations import GroupAssociationsMixin
 from biblium.bibgroup_modules.analysis import GroupAnalysisMixin
+from biblium.bibgroup_modules.year_trend import GroupYearTrendMixin
+from biblium.bibgroup_modules.content_analysis import GroupContentAnalysisMixin
+from biblium.bibgroup_modules.field_dynamics import GroupFieldDynamicsMixin
+from biblium.bibgroup_modules.pairs import GroupPairsMixin
 
 
 def initialize_biblio_common(*args: Any, **kwargs: Any) -> BiblioStats:
@@ -61,6 +65,10 @@ class BiblioGroup(
     GroupStatsMixin,
     GroupAssociationsMixin,
     GroupAnalysisMixin,
+    GroupYearTrendMixin,
+    GroupContentAnalysisMixin,
+    GroupFieldDynamicsMixin,
+    GroupPairsMixin,
 ):
     """
     Group-based bibliometric analysis.
@@ -115,8 +123,9 @@ class BiblioGroup(
     ) -> None:
         """Save current matplotlib figure if res_folder is set."""
         if self.res_folder is not None:
+            from biblium import plotbib
             path = os.path.join(self.res_folder, subfolder, filename_base)
-            utilsbib.save_plot(path, dpi=getattr(self, "dpi", 600))
+            plotbib.save_plot(path, dpi=getattr(self, "dpi", 600))
 
     def _get_column(
         self,
@@ -362,6 +371,201 @@ class BiblioGroup(
             sep=self.default_separator,
             **kwargs,
         )
+
+
+    # =========================================================================
+    # SUBGROUP PREVALENCE COMPARISON
+    # =========================================================================
+
+    def _resolve_subgroup_mask(self, subgroup: Any) -> "np.ndarray":
+        """Resolve a subgroup selector into a boolean mask aligned
+        positionally with the rows of ``self.group_matrix``.
+
+        Accepts a callable (applied to ``self.df``), a boolean mask/Series,
+        or a sequence of ``self.df`` index labels / positional indices.
+        """
+        import numpy as np
+        if getattr(self, "group_matrix", None) is None:
+            raise ValueError(
+                "group_matrix is not available; call build_groups() first.")
+        n = len(self.group_matrix)
+        if callable(subgroup):
+            subgroup = subgroup(self.df)
+        arr = np.asarray(subgroup)
+        if arr.dtype == bool:
+            if len(arr) != n:
+                raise ValueError(
+                    f"Boolean subgroup mask has length {len(arr)}, "
+                    f"expected {n}.")
+            return arr
+        mask = np.zeros(n, dtype=bool)
+        labels = list(arr)
+        pos = self.df.index.get_indexer(labels)
+        if (pos >= 0).all():
+            mask[pos] = True
+        else:
+            mask[np.asarray(labels, dtype=int)] = True
+        return mask
+
+    def compare_subgroup_prevalence(
+        self,
+        subgroup: Any,
+        subgroup_label: str = "Subgroup",
+        sort: bool = True,
+        save: bool = True,
+        filename: str = "subgroup_prevalence",
+    ) -> pd.DataFrame:
+        """Compare how prevalent each group is within a subset of documents
+        versus the whole corpus.
+
+        For every group in ``self.group_matrix`` this reports the number
+        and share of documents belonging to the group, computed once for
+        the supplied subset of documents and once for the entire corpus,
+        together with the lift (subset share divided by corpus share). A
+        lift above 1 means the group is over-represented in the subset.
+
+        Parameters
+        ----------
+        subgroup : callable, boolean mask, or sequence of index labels
+            Selects the documents forming the subset. A callable is
+            applied to ``self.df`` and must return a boolean mask.
+        subgroup_label : str, default "Subgroup"
+            Label used for the subset in the returned table.
+        sort : bool, default True
+            Sort groups by descending subset share.
+        save : bool, default True
+            Save the resulting table to ``res_folder`` when available.
+        filename : str, default "subgroup_prevalence"
+            Base file name used when saving.
+
+        Returns
+        -------
+        pd.DataFrame
+            Columns: ``group``, ``subgroup_documents``, ``subgroup_pct``,
+            ``corpus_documents``, ``corpus_pct``, ``lift``.
+        """
+        import numpy as np
+        gm = self.group_matrix
+        mask = self._resolve_subgroup_mask(subgroup)
+        n = len(gm)
+        sub_n = int(mask.sum())
+        if sub_n == 0:
+            raise ValueError("The subgroup selects zero documents.")
+        members = gm.to_numpy().astype(bool)
+        corpus_docs = members.sum(axis=0)
+        sub_docs = members[mask].sum(axis=0)
+        corpus_pct = 100.0 * corpus_docs / n
+        sub_pct = 100.0 * sub_docs / sub_n
+        with np.errstate(divide="ignore", invalid="ignore"):
+            lift = np.where(corpus_pct > 0, sub_pct / corpus_pct, np.nan)
+        out = pd.DataFrame({
+            "group": list(gm.columns),
+            "subgroup_documents": sub_docs.astype(int),
+            "subgroup_pct": sub_pct.round(2),
+            "corpus_documents": corpus_docs.astype(int),
+            "corpus_pct": corpus_pct.round(2),
+            "lift": np.round(lift, 2),
+        })
+        out.attrs["subgroup_label"] = subgroup_label
+        out.attrs["subgroup_n"] = sub_n
+        out.attrs["corpus_n"] = n
+        if sort:
+            out = out.sort_values(
+                "subgroup_pct", ascending=False).reset_index(drop=True)
+        if save:
+            self._save_table(out, filename)
+        return out
+
+    def plot_subgroup_prevalence(
+        self,
+        subgroup: Any,
+        subgroup_label: str = "Subgroup",
+        top_n: Optional[int] = 12,
+        title: Optional[str] = None,
+        sort: bool = True,
+        subgroup_color: str = "#B5121B",
+        corpus_color: str = "#9BB7D4",
+        filename: str = "subgroup_prevalence",
+        figsize: tuple = (11, 6.2),
+        show: bool = False,
+    ) -> pd.DataFrame:
+        """Plot a grouped horizontal bar chart comparing group prevalence
+        in a subset of documents against the whole corpus.
+
+        This visualises :meth:`compare_subgroup_prevalence`: for each
+        group, one bar shows the share of subset documents belonging to it
+        and a second bar shows the share across the whole corpus. Groups
+        are ordered by descending subset share and the chart is drawn
+        without grid lines.
+
+        Parameters
+        ----------
+        subgroup : callable, boolean mask, or sequence of index labels
+            Passed through to :meth:`compare_subgroup_prevalence`.
+        subgroup_label : str, default "Subgroup"
+            Legend label for the subset bars.
+        top_n : int or None, default 12
+            Show only the ``top_n`` groups with the highest subset share.
+        title : str, optional
+            Plot title; a sensible default is generated when omitted.
+        sort : bool, default True
+            Sort groups by descending subset share.
+        subgroup_color, corpus_color : str
+            Bar colours for the subset and the whole corpus.
+        filename : str, default "subgroup_prevalence"
+            Base file name used when saving to ``res_folder``.
+        figsize : tuple, default (11, 6.2)
+            Figure size in inches.
+        show : bool, default False
+            Display the figure interactively.
+
+        Returns
+        -------
+        pd.DataFrame
+            The comparison table from :meth:`compare_subgroup_prevalence`.
+        """
+        import numpy as np
+        import matplotlib.pyplot as plt
+        comp = self.compare_subgroup_prevalence(
+            subgroup, subgroup_label=subgroup_label, sort=sort,
+            save=True, filename=filename)
+        sub_n = comp.attrs.get("subgroup_n", 0)
+        corpus_n = comp.attrs.get("corpus_n", 0)
+        data = comp.head(top_n) if top_n else comp
+        data = data.iloc[::-1]
+        y = np.arange(len(data))
+        bar_h = 0.38
+        fig, ax = plt.subplots(figsize=figsize, dpi=getattr(self, "dpi", 200))
+        ax.barh(y + bar_h / 2, data["subgroup_pct"], height=bar_h,
+                color=subgroup_color,
+                label=f"{subgroup_label} (n={sub_n:,})")
+        ax.barh(y - bar_h / 2, data["corpus_pct"], height=bar_h,
+                color=corpus_color, label=f"Whole corpus (n={corpus_n:,})")
+        ax.set_yticks(y)
+        ax.set_yticklabels(data["group"], fontsize=11)
+        ax.set_xlabel("Share of documents (%)", fontsize=12)
+        if title is None:
+            title = f"Group prevalence: {subgroup_label} vs. whole corpus"
+        ax.set_title(title, fontsize=14, fontweight="bold", pad=12)
+        ax.grid(False)
+        for spine in ("top", "right"):
+            ax.spines[spine].set_visible(False)
+        ax.tick_params(labelsize=11)
+        xmax = float(max(data["subgroup_pct"].max(), data["corpus_pct"].max()))
+        for yi, (sp_v, co_v) in enumerate(
+                zip(data["subgroup_pct"], data["corpus_pct"])):
+            ax.text(sp_v + xmax * 0.012, yi + bar_h / 2, f"{sp_v:.0f}%",
+                    va="center", fontsize=9, color="#333333")
+            ax.text(co_v + xmax * 0.012, yi - bar_h / 2, f"{co_v:.0f}%",
+                    va="center", fontsize=9, color="#333333")
+        ax.set_xlim(0, xmax * 1.12)
+        ax.legend(fontsize=10, loc="lower right", frameon=False)
+        fig.tight_layout()
+        self._save_plot(filename)
+        if show:
+            plt.show()
+        plt.close(fig)
+        return comp
 
     # =========================================================================
     # ALIASES

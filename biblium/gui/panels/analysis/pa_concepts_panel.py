@@ -13,14 +13,14 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import threading
 import os
-from typing import Dict, Optional, List
+from typing import List
 
-from biblium.gui.config import FONTS, LAYOUT, get_theme
+from biblium.gui.config import FONTS
 from biblium.gui.core.events import event_bus, EventBus
 from biblium.gui.panels.base import BasePanel
 from biblium.gui.widgets.cards import Card, CollapsibleCard, StatsCard, CardGrid
 from biblium.gui.widgets.buttons import ThemedButton, ActionButton
-from biblium.gui.widgets.forms import LabeledCombobox, LabeledCheckbox, LabeledSpinbox
+from biblium.gui.widgets.forms import LabeledCombobox, LabeledCheckbox
 from biblium.gui.widgets.tables import DataTable
 
 try:
@@ -542,7 +542,7 @@ class PAConceptsPanel(BasePanel):
             
             messagebox.showinfo("Success", f"Summary exported to:\n{filepath}")
         except Exception as e:
-            messagebox.showerror("Error", f"Export failed:\n{str(e)}")
+            messagebox.showerror("Error", f"Export failed:\n{e!s}")
     
     def _export_full_data(self, data_df: pd.DataFrame):
         """Export full data with PA indicators."""
@@ -567,7 +567,7 @@ class PAConceptsPanel(BasePanel):
             
             messagebox.showinfo("Success", f"Data exported to:\n{filepath}")
         except Exception as e:
-            messagebox.showerror("Error", f"Export failed:\n{str(e)}")
+            messagebox.showerror("Error", f"Export failed:\n{e!s}")
     
     def _export_filtered_data(self):
         """Export filtered data (only tagged documents)."""
@@ -599,7 +599,7 @@ class PAConceptsPanel(BasePanel):
             
             messagebox.showinfo("Success", f"Filtered data ({len(filtered_df):,} documents) exported to:\n{filepath}")
         except Exception as e:
-            messagebox.showerror("Error", f"Export failed:\n{str(e)}")
+            messagebox.showerror("Error", f"Export failed:\n{e!s}")
     
     def _show_loading(self, message: str = "Processing..."):
         """Show loading indicator."""

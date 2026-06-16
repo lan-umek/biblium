@@ -31,7 +31,7 @@ class GroupAnalysisMixin:
     res_folder: Optional[str]
 
     def compare_continuous_vars(
-        self: "BiblioGroup",
+        self: BiblioGroup,
         vrs: List[str] = None,
         output_format: Literal["long", "wide"] = "long",
     ) -> pd.DataFrame:
@@ -64,7 +64,7 @@ class GroupAnalysisMixin:
         return self.stats_comparison_continous_df
 
     def get_group_intersections(
-        self: "BiblioGroup",
+        self: BiblioGroup,
         include_ids: bool = True,
         id_column: str = "Doc ID",
     ) -> pd.DataFrame:
@@ -97,7 +97,7 @@ class GroupAnalysisMixin:
         return self.group_intersections_df
 
     def process_keywords(
-        self: "BiblioGroup",
+        self: BiblioGroup,
         exclude_list: Optional[List[str]] = None,
         synonyms: Optional[Dict[str, List[str]]] = None,
         lemmatize: bool = False,
@@ -140,7 +140,7 @@ class GroupAnalysisMixin:
             self.groups[group_name].set_data(self.group_df[group_name])
 
     def process_text_vars(
-        self: "BiblioGroup",
+        self: BiblioGroup,
         stopwords_file: Optional[str] = None,
         lang: str = "en",
         remove_numbers: bool = True,
@@ -190,7 +190,7 @@ class GroupAnalysisMixin:
             self.groups[group_name].set_data(self.group_df[group_name])
 
     def get_main_info(
-        self: "BiblioGroup",
+        self: BiblioGroup,
         include: Optional[List[str]] = None,
         performance_mode: str = "full",
         stopwords: Optional[Any] = None,
@@ -268,7 +268,7 @@ class GroupAnalysisMixin:
             )
 
     def get_scientific_production(
-        self: "BiblioGroup",
+        self: BiblioGroup,
         relative_counts: bool = True,
         cumulative: bool = True,
         predict_last_year: bool = True,
@@ -311,7 +311,7 @@ class GroupAnalysisMixin:
         return self.production_df
 
     def get_group_top_cited_documents(
-        self: "BiblioGroup",
+        self: BiblioGroup,
         top_n: int = 10,
         cols: Optional[List[str]] = None,
         filters: Optional[Dict[str, Any]] = None,

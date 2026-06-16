@@ -12,8 +12,7 @@ This module contains:
 from __future__ import annotations
 
 import os
-import re
-from typing import Dict, List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union
 import pandas as pd
 import numpy as np
 
@@ -365,3 +364,162 @@ def openalex_add_corresponding_country(
         df["CA Country"] = ""
     
     return df
+
+# ============================================================================
+# Country display names (ISO2 → preferred name) + diagnostic functions
+# ============================================================================
+
+# Default display overrides — ISO 3166-1 alpha-2 → preferred name
+# (uporabnik lahko razširi prek parametra)
+DEFAULT_COUNTRY_DISPLAY: dict[str, str] = {
+    "GB": "UK",          # United Kingdom (kolokvialno UK je razumljivejši kot GB)
+    "US": "US",
+    # po želji dodaj druge mappinge
+}
+
+
+def country_iso2_to_display(iso2: str,
+                              overrides: dict[str, str] | None = None) -> str:
+    """
+    Pretvori ISO2 v prikazno ime, ki si ga uporabnik želi.
+
+    Parameters
+    ----------
+    iso2 : str
+        ISO 3166-1 alpha-2 koda (npr. "GB", "MN", "US").
+    overrides : dict, optional
+        Custom mapping (npr. {"GB": "UK"}). Spojen z DEFAULT_COUNTRY_DISPLAY.
+
+    Returns
+    -------
+    str
+        Prikazna oznaka — bodisi iz overrides bodisi originalni ISO2.
+    """
+    if not isinstance(iso2, str) or not iso2.strip():
+        return iso2
+    iso2 = iso2.strip().upper()
+    omap = dict(DEFAULT_COUNTRY_DISPLAY)
+    if overrides:
+        omap.update({k.upper(): v for k, v in overrides.items()})
+    return omap.get(iso2, iso2)
+
+
+def map_country_codes_to_display(series: "pd.Series",
+                                    overrides: dict[str, str] | None = None,
+                                    sep: str | None = None) -> "pd.Series":
+    """
+    Mapira pd.Series ISO2 kod v prikazne oznake. Če je vsaka vrednost
+    seznam (sep podan), se mappira vsak token posebej.
+    """
+    import pandas as pd
+    if sep is None:
+        return series.map(lambda v: country_iso2_to_display(v, overrides))
+    def _map_list(s):
+        if not isinstance(s, str):
+            return s
+        items = [country_iso2_to_display(t.strip(), overrides)
+                 for t in s.split(sep) if t.strip()]
+        return sep.join(items)
+    return series.map(_map_list)
+
+
+def diagnose_country_codes_in_corpus(
+    df: "pd.DataFrame",
+    col: str = "oa_institution_countries",
+    sep: str = "; ",
+    institution_col: str = "oa_institutions",
+    institution_sep: str = "; ",
+    top_n: int = 25,
+    suspicious_threshold: int = 20,
+    verbose: bool = True,
+) -> "pd.DataFrame":
+    """
+    Diagnostika ISO2 country kod v korpusu — za sanity check.
+
+    Za vsak ISO2 najde top 5 institucij, ki tej kodi pripadajo. To omogoči
+    preverbo "ali je MN res Mongolia ali OpenAlex artefakt (npr. Minnesota)".
+
+    Parameters
+    ----------
+    df : DataFrame
+        Mora vsebovati `col` (country ISO2 kode, sep-separated) in opcijsko
+        `institution_col` (display imena institucij, paralelno).
+    col : str
+        Stolpec z državami.
+    sep : str
+        Separator v `col`.
+    institution_col : str
+        Stolpec z institucijami.
+    institution_sep : str
+        Separator v `institution_col`.
+    top_n : int
+        Koliko top ISO2 razdrobi.
+    suspicious_threshold : int
+        ISO2 z manj kot toliko zapisov se označi kot "sumljiv".
+    verbose : bool
+        Izpiši top N.
+
+    Returns
+    -------
+    DataFrame
+        Vrstice = ISO2; stolpci: iso2, display, n_documents,
+        top_institutions (semicolon-joined), is_suspicious.
+    """
+    import pandas as pd
+    from collections import Counter, defaultdict
+
+    if col not in df.columns:
+        if verbose:
+            print(f"  ! stolpec {col} ni v df; preskačem")
+        return pd.DataFrame()
+
+    has_inst = institution_col in df.columns
+
+    iso_counter = Counter()
+    iso_to_insts: dict[str, Counter] = defaultdict(Counter)
+
+    for idx, row in df.iterrows():
+        cs = row.get(col)
+        if not isinstance(cs, str) or not cs.strip():
+            continue
+        iso_list = [c.strip() for c in cs.split(sep) if c.strip()]
+        for c in iso_list:
+            iso_counter[c] += 1
+        if has_inst:
+            inst_str = row.get(institution_col) or ""
+            if isinstance(inst_str, str):
+                inst_list = [i.strip() for i in inst_str.split(institution_sep) if i.strip()]
+                # naključno: poveži vse institucije z vsemi državami v vrstici
+                # (heuristika — eksaktna povezava bi rabila OpenAlex authorships)
+                for c in iso_list:
+                    for inst in inst_list:
+                        iso_to_insts[c][inst] += 1
+
+    rows = []
+    for iso, n in iso_counter.most_common():
+        top_insts = ""
+        if has_inst:
+            top_insts = "; ".join(
+                f"{name} ({cnt})" for name, cnt in iso_to_insts[iso].most_common(5)
+            )
+        rows.append({
+            "iso2": iso,
+            "display": country_iso2_to_display(iso),
+            "n_documents": n,
+            "top_institutions": top_insts,
+            "is_suspicious": n < suspicious_threshold,
+        })
+    result = pd.DataFrame(rows)
+
+    if verbose and not result.empty:
+        print(f"\n  Top {min(top_n, len(result))} držav po številu zapisov "
+              f"(skupaj {len(result)} unikatnih ISO2):")
+        for _, r in result.head(top_n).iterrows():
+            iso = r["iso2"]; disp = r["display"]; n = r["n_documents"]
+            print(f"    {iso:>3} -> {disp:<8} {n:>6}")
+            if r["top_institutions"]:
+                inst = r["top_institutions"][:200]
+                print(f"        top institucije: {inst}")
+
+    return result
+

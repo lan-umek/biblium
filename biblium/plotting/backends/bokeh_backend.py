@@ -8,7 +8,7 @@ Creates interactive, web-based visualizations.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, List, Optional, Union
 
 import pandas as pd
 import numpy as np
@@ -402,7 +402,7 @@ class BokehBackend(PlotBackend):
         """Create a scatter plot."""
         self._check_available()
         
-        from bokeh.models import ColumnDataSource, HoverTool, ColorBar, LinearColorMapper
+        from bokeh.models import ColumnDataSource, HoverTool, ColorBar
         from bokeh.transform import linear_cmap
         
         config = self._merge_config(config)
@@ -570,7 +570,6 @@ class BokehBackend(PlotBackend):
         self._check_available()
         
         from bokeh.models import ColumnDataSource, HoverTool, LabelSet
-        from bokeh.models import Circle, MultiLine
         import networkx as nx
         
         config = self._merge_config(config)
@@ -1314,7 +1313,6 @@ class BokehBackend(PlotBackend):
         """Radar chart approximated with line plot in polar-like arrangement."""
         self._check_available()
         
-        from bokeh.models import ColumnDataSource
         import math
         
         config = self._merge_config(config)

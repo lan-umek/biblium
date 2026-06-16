@@ -3,6 +3,42 @@
 Group association methods for BiblioGroup.
 
 This module provides mixin methods for associating groups with various entities.
+
+New in 2.16
+-----------
+``associate_items`` (and the ``associate_*`` wrappers it delegates to) now
+accept three additional parameters:
+
+- ``inference`` -- ``"asymptotic"`` (default), ``"permutation"`` or ``"both"``.
+  When permutation inference is requested, a row-wise permutation test is
+  run on the contingency table after the standard analysis. Permutation
+  results are attached to the resulting ``Relation`` object as
+  ``permutation_*`` attributes (see Notes).
+- ``n_permutations`` -- number of permutations (None triggers an adaptive
+  choice from a target time budget).
+- ``multiple_testing`` -- correction for cell-level residual p-values
+  (``"bh"``, ``"holm"``, ``"bonferroni"``, ``"none"``).
+
+A separate parameter:
+
+- ``logit`` -- ``"none"`` (default), ``"firth"``, ``"auto"``, or ``"mle"``.
+  When set, a per-group binary logit (group membership ~ entity
+  indicators) is fitted with the chosen method. Results are stored on
+  the ``Relation`` object as ``R.logit_results`` (a dict keyed by group).
+
+Notes
+-----
+Permutation results live on the returned ``Relation`` object as:
+
+- ``R.permutation_chi2_p`` -- global chi-squared p-value
+- ``R.permutation_chi2_p_ci`` -- 95% Clopper-Pearson CI for that p-value
+- ``R.permutation_residuals_p`` -- per-cell two-sided p-values, same
+  shape as ``R.chi2_residuals_df``
+- ``R.permutation_residuals_p_adj`` -- multiple-testing-adjusted p-values
+- ``R.permutation_n`` -- number of permutations actually performed
+- ``R.permutation_disjoint`` -- whether ``group_matrix`` is a disjoint
+  partition (in which case the asymptotic test is unbiased and the
+  permutation test is informational)
 """
 
 from __future__ import annotations
@@ -10,14 +46,36 @@ from __future__ import annotations
 import os
 import re
 import warnings
-from typing import TYPE_CHECKING, Any, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Tuple, Union
 
+import numpy as np
 import pandas as pd
 
 from biblium import utilsbib
 
 if TYPE_CHECKING:
     from biblium.bibgroup import BiblioGroup
+
+
+# ---------------------------------------------------------------------------
+# Lazy imports for the new inference machinery
+# ---------------------------------------------------------------------------
+
+def _get_permutation_module():
+    """Lazy import of the permutation submodule."""
+    from biblium.utilsbib_modules import permutation as _perm
+    return _perm
+
+
+def _get_firth_module():
+    """Lazy import of the firth (logistic regression) submodule."""
+    from biblium.utilsbib_modules import firth as _firth
+    return _firth
+
+
+# ---------------------------------------------------------------------------
+# Mixin
+# ---------------------------------------------------------------------------
 
 
 class GroupAssociationsMixin:
@@ -30,7 +88,7 @@ class GroupAssociationsMixin:
     res_folder: Optional[str]
 
     def associate_items(
-        self: "BiblioGroup",
+        self: BiblioGroup,
         *,
         domain_key: str,
         item_col: str,
@@ -45,9 +103,21 @@ class GroupAssociationsMixin:
         min_freq: int = 5,
         items_included: Optional[Union[List[str], str]] = None,
         items_excluded: Optional[Union[List[str], str]] = None,
+        # --- new in 2.16: permutation inference --------------------------
+        inference: Literal["asymptotic", "permutation", "both"] = "asymptotic",
+        n_permutations: Optional[int] = None,
+        target_seconds: float = 5.0,
+        multiple_testing: Literal["bh", "holm", "bonferroni", "none"] = "bh",
+        permutation_tests: Tuple[str, ...] = ("chi2", "residuals"),
+        random_state: Optional[int] = None,
+        # --- new in 2.16: Firth-penalised logistic regression ------------
+        logit: Literal["none", "firth", "auto", "mle"] = "none",
+        logit_ci: Optional[Literal["wald", "profile"]] = None,
+        logit_compute_lrt: bool = False,
+        # -----------------------------------------------------------------
         filename: Optional[str] = None,
         **kwargs: Any,
-    ) -> "BiblioGroup":
+    ) -> BiblioGroup:
         """
         Build item indicators and relate them to groups.
 
@@ -56,7 +126,11 @@ class GroupAssociationsMixin:
         2. Select items by items_included/top_n/min_freq and apply items_excluded.
         3. Build indicators via utilsbib.match_items_and_compute_binary_indicators.
         4. Relate groups to items using self.group_matrix.
-        5. If filename provided, save associations to Excel.
+        5. (NEW) If ``inference != "asymptotic"`` run permutation tests
+           and attach results to the ``Relation`` object.
+        6. (NEW) If ``logit != "none"`` fit a per-group Firth/MLE logit
+           and attach the results dict to the ``Relation`` object.
+        7. If ``filename`` is provided, save associations to Excel.
 
         Parameters
         ----------
@@ -65,36 +139,65 @@ class GroupAssociationsMixin:
         item_col : str
             Column name containing the items.
         count_type : str, default "single"
-            Type of counting ("single", "list", "text").
         value_type : str, default "string"
-            Type of values ("string", "list", "text").
         item_column_name : str, default "Item"
-            Label for the item column in output.
         translated_column_name : str, optional
-            Optional translated column name.
         include_stats : tuple, default ("diversity", "correspondence", "chi2", "svd", "log-ratio")
-            Statistics to include in associations.
+            Asymptotic / descriptive statistics to compute. Permutation
+            p-values for these statistics are added separately when
+            ``inference != "asymptotic"``.
         clean_zeros : bool, default True
-            Remove zero-count items.
         to_self : bool, default False
-            Include self-associations.
         top_n : int, default 0
-            Number of top items (0 = use min_freq).
         min_freq : int, default 5
-            Minimum frequency threshold.
-        items_included : list or str, optional
-            Items to include (list or regex pattern).
-        items_excluded : list or str, optional
-            Items to exclude (list or regex pattern).
+        items_included, items_excluded : list or str, optional
+
+        inference : {"asymptotic", "permutation", "both"}, default "asymptotic"
+            - "asymptotic": classical chi-squared and CA. Unbiased only
+              when groups are disjoint AND entities are single-valued.
+            - "permutation": replace asymptotic p-values with
+              permutation p-values, valid even when groups overlap or
+              entities are multi-valued.
+            - "both": keep asymptotic statistics AND add permutation
+              p-values for direct comparison (recommended for
+              methodological reporting).
+        n_permutations : int, optional
+            Number of permutations. ``None`` -> adaptive choice based on
+            ``target_seconds``.
+        target_seconds : float, default 5.0
+            Time budget for adaptive ``n_permutations``.
+        multiple_testing : {"bh", "holm", "bonferroni", "none"}, default "bh"
+            Correction applied to cell-level residual p-values.
+        permutation_tests : tuple of str, default ("chi2", "residuals")
+            Which permutation tests to run. Subset of:
+            ``"chi2"``, ``"cramers_v"``, ``"total_inertia"``,
+            ``"dimension_inertias"``, ``"residuals"``.
+        random_state : int, optional
+            Seed for reproducible permutation results.
+
+        logit : {"none", "firth", "auto", "mle"}, default "none"
+            - "none" : do not fit a logistic regression.
+            - "firth": always fit Firth-penalised logit.
+            - "auto" : detect (near-)singular design or post-hoc
+              separation; fall back to Firth otherwise use MLE.
+            - "mle"  : standard MLE (no separation handling).
+        logit_ci : {"wald", "profile"}, optional
+            Defaults to "profile" for Firth, "wald" for MLE.
+        logit_compute_lrt : bool, default False
+            Compute likelihood-ratio p-values (one constrained refit per
+            coefficient -- expensive).
+
         filename : str, optional
-            Output filename for associations.
         **kwargs :
-            Additional options.
+            Additional options forwarded to ``count_occurrences`` (e.g. ``sep``).
 
         Returns
         -------
         BiblioGroup
-            Self for method chaining.
+            Self for method chaining. The relation is stored in
+            ``self.<domain_key>_associations`` (a ``Relation`` object,
+            possibly with ``permutation_*`` and ``logit_*`` attributes)
+            and the contingency table in ``self.<domain_key>_contingency``.
         """
         if not hasattr(self, "group_matrix") or self.group_matrix is None:
             raise AttributeError("self.group_matrix is missing. Build groups first.")
@@ -220,17 +323,190 @@ class GroupAssociationsMixin:
                 to_self=to_self,
             )
 
+        # 5) Permutation inference (new in 2.16)
+        if inference in ("permutation", "both"):
+            self._attach_permutation_inference(
+                assoc,
+                G=G,
+                X=X,
+                tests=permutation_tests,
+                n_permutations=n_permutations,
+                target_seconds=target_seconds,
+                multiple_testing=multiple_testing,
+                random_state=random_state,
+            )
+
+        # 6) Logit (new in 2.16)
+        if logit != "none":
+            self._attach_logit_results(
+                assoc,
+                G=G,
+                X=X,
+                method=logit,
+                ci_method=logit_ci,
+                compute_lrt=logit_compute_lrt,
+            )
+
         setattr(self, f"{domain_key}_associations", assoc)
         setattr(self, f"{domain_key}_contingency", cont)
 
-        # 5) Save if requested
+        # 7) Save if requested
         if filename:
             utilsbib._save_associations_xlsx(assoc, filename)
 
         return self
 
+    # ------------------------------------------------------------------
+    # New helpers (2.16)
+    # ------------------------------------------------------------------
+
+    def _attach_permutation_inference(
+        self: BiblioGroup,
+        relation: Any,
+        *,
+        G: pd.DataFrame,
+        X: pd.DataFrame,
+        tests: Tuple[str, ...],
+        n_permutations: Optional[int],
+        target_seconds: float,
+        multiple_testing: str,
+        random_state: Optional[int],
+    ) -> None:
+        """Run permutation tests and attach the results to ``relation``."""
+        perm = _get_permutation_module()
+
+        G_arr = G.to_numpy(dtype="float64")
+        X_arr = X.to_numpy(dtype="float64")
+
+        # Detect disjoint groups (asymptotic chi^2 already valid)
+        disjoint = perm.is_partition(G_arr)
+        relation.permutation_disjoint = disjoint
+        if disjoint:
+            warnings.warn(
+                "Groups are disjoint: the asymptotic chi-squared test is "
+                "unbiased; the permutation results below are reported for "
+                "completeness only.",
+                UserWarning, stacklevel=3,
+            )
+
+        # Global chi^2
+        if "chi2" in tests:
+            res = perm.assoc_permutation_test(
+                G_arr, X_arr, test="chi2",
+                n_permutations=n_permutations,
+                target_seconds=target_seconds,
+                random_state=random_state,
+                warn_disjoint=False,
+            )
+            relation.permutation_chi2 = float(res.observed)
+            relation.permutation_chi2_p = float(res.p_value)
+            relation.permutation_chi2_p_ci = res.p_value_ci
+            relation.permutation_n = int(res.n_permutations)
+            relation.permutation_seed = res.seed
+
+        # Cramer's V
+        if "cramers_v" in tests:
+            res = perm.assoc_permutation_test(
+                G_arr, X_arr, test="cramers_v",
+                n_permutations=n_permutations,
+                target_seconds=target_seconds,
+                random_state=random_state,
+                warn_disjoint=False,
+            )
+            relation.permutation_cramers_v = float(res.observed)
+            relation.permutation_cramers_v_p = float(res.p_value)
+
+        # Total inertia (CA scalar)
+        if "total_inertia" in tests:
+            res = perm.assoc_permutation_test(
+                G_arr, X_arr, test="total_inertia",
+                n_permutations=n_permutations,
+                target_seconds=target_seconds,
+                random_state=random_state,
+                warn_disjoint=False,
+            )
+            relation.permutation_total_inertia = float(res.observed)
+            relation.permutation_total_inertia_p = float(res.p_value)
+
+        # Per-dimension CA inertias
+        if "dimension_inertias" in tests:
+            res = perm.assoc_permutation_test(
+                G_arr, X_arr, test="dimension_inertias",
+                n_permutations=n_permutations,
+                target_seconds=target_seconds,
+                random_state=random_state,
+                warn_disjoint=False,
+            )
+            relation.permutation_dim_inertias = np.asarray(res.observed)
+            relation.permutation_dim_inertias_p = np.asarray(res.p_value)
+
+        # Cell-level residuals
+        if "residuals" in tests:
+            res = perm.assoc_permutation_test(
+                G_arr, X_arr, test="residuals",
+                n_permutations=n_permutations,
+                target_seconds=target_seconds,
+                multiple_testing=multiple_testing,
+                random_state=random_state,
+                warn_disjoint=False,
+            )
+            relation.permutation_residuals = pd.DataFrame(
+                np.asarray(res.observed), index=G.columns, columns=X.columns,
+            )
+            relation.permutation_residuals_p = pd.DataFrame(
+                np.asarray(res.p_value), index=G.columns, columns=X.columns,
+            )
+            relation.permutation_residuals_p_adj = pd.DataFrame(
+                res.extra["p_value_adjusted"],
+                index=G.columns, columns=X.columns,
+            )
+            relation.permutation_residuals_correction = res.extra["multiple_testing"]
+
+    def _attach_logit_results(
+        self: BiblioGroup,
+        relation: Any,
+        *,
+        G: pd.DataFrame,
+        X: pd.DataFrame,
+        method: str,
+        ci_method: Optional[str],
+        compute_lrt: bool,
+    ) -> None:
+        """Fit a per-group binary logit and attach results to ``relation``."""
+        firth = _get_firth_module()
+
+        results: Dict[str, Any] = {}
+        method_used: Dict[str, str] = {}
+        for g_name in G.columns:
+            y = G[g_name].to_numpy(dtype="float64")
+            if np.unique(y).size < 2:
+                warnings.warn(
+                    f"Skipping logit for group '{g_name}': "
+                    f"only one class in the outcome.",
+                    UserWarning, stacklevel=3,
+                )
+                continue
+            try:
+                res = firth.fit_logit(
+                    X, y,
+                    method=method,
+                    ci_method=ci_method,
+                    compute_lrt=compute_lrt,
+                    add_intercept=True,
+                )
+                results[g_name] = res
+                method_used[g_name] = res.method_used
+            except Exception as exc:
+                warnings.warn(
+                    f"Logit fit failed for group '{g_name}': "
+                    f"{type(exc).__name__}: {exc}",
+                    UserWarning, stacklevel=3,
+                )
+        relation.logit_results = results
+        relation.logit_method_used = method_used
+
     def _resolve_filename(
-        self: "BiblioGroup",
+        self: BiblioGroup,
         filename: Optional[str],
         subfolder: str = "relations",
     ) -> Optional[str]:
@@ -240,7 +516,7 @@ class GroupAssociationsMixin:
         return filename
 
     def associate_sources(
-        self: "BiblioGroup",
+        self: BiblioGroup,
         *,
         include_stats: Tuple[str, ...] = ("diversity", "correspondence", "chi2", "svd", "log-ratio"),
         clean_zeros: bool = True,
@@ -251,7 +527,7 @@ class GroupAssociationsMixin:
         items_excluded: Optional[Union[List[str], str]] = None,
         filename: Optional[str] = "associated sources",
         **kwargs: Any,
-    ) -> "BiblioGroup":
+    ) -> BiblioGroup:
         """
         Relate fixed groups to journal sources.
 
@@ -298,7 +574,7 @@ class GroupAssociationsMixin:
         )
 
     def associate_author_keywords(
-        self: "BiblioGroup",
+        self: BiblioGroup,
         *,
         include_stats: Tuple[str, ...] = ("diversity", "correspondence", "chi2", "svd", "log-ratio"),
         clean_zeros: bool = True,
@@ -310,7 +586,7 @@ class GroupAssociationsMixin:
         sep: Optional[str] = None,
         filename: Optional[str] = "associated keywords",
         **kwargs: Any,
-    ) -> "BiblioGroup":
+    ) -> BiblioGroup:
         """
         Relate fixed groups to Author Keywords.
 
@@ -344,7 +620,7 @@ class GroupAssociationsMixin:
         )
 
     def associate_index_keywords(
-        self: "BiblioGroup",
+        self: BiblioGroup,
         *,
         include_stats: Tuple[str, ...] = ("diversity", "correspondence", "chi2", "svd", "log-ratio"),
         clean_zeros: bool = True,
@@ -356,7 +632,7 @@ class GroupAssociationsMixin:
         sep: Optional[str] = None,
         filename: Optional[str] = "associated index keywords",
         **kwargs: Any,
-    ) -> "BiblioGroup":
+    ) -> BiblioGroup:
         """
         Relate fixed groups to Index Keywords.
 
@@ -390,7 +666,7 @@ class GroupAssociationsMixin:
         )
 
     def associate_abstract_words(
-        self: "BiblioGroup",
+        self: BiblioGroup,
         *,
         include_stats: Tuple[str, ...] = ("diversity", "correspondence", "chi2", "svd", "log-ratio"),
         clean_zeros: bool = True,
@@ -402,7 +678,7 @@ class GroupAssociationsMixin:
         sep: Optional[str] = None,
         filename: Optional[str] = "associated abstract words",
         **kwargs: Any,
-    ) -> "BiblioGroup":
+    ) -> BiblioGroup:
         """
         Relate fixed groups to words from Abstracts.
 
@@ -438,7 +714,7 @@ class GroupAssociationsMixin:
         )
 
     def associate_title_words(
-        self: "BiblioGroup",
+        self: BiblioGroup,
         *,
         include_stats: Tuple[str, ...] = ("diversity", "correspondence", "chi2", "svd", "log-ratio"),
         clean_zeros: bool = True,
@@ -450,7 +726,7 @@ class GroupAssociationsMixin:
         sep: Optional[str] = None,
         filename: Optional[str] = "associated title words",
         **kwargs: Any,
-    ) -> "BiblioGroup":
+    ) -> BiblioGroup:
         """
         Relate fixed groups to words from Titles.
 
@@ -486,7 +762,7 @@ class GroupAssociationsMixin:
         )
 
     def associate_authors(
-        self: "BiblioGroup",
+        self: BiblioGroup,
         *,
         include_stats: Tuple[str, ...] = ("diversity", "correspondence", "chi2", "svd", "log-ratio"),
         clean_zeros: bool = True,
@@ -498,7 +774,7 @@ class GroupAssociationsMixin:
         sep: Optional[str] = None,
         filename: Optional[str] = "associated authors",
         **kwargs: Any,
-    ) -> "BiblioGroup":
+    ) -> BiblioGroup:
         """
         Relate fixed groups to Authors.
 
@@ -532,7 +808,7 @@ class GroupAssociationsMixin:
         )
 
     def associate_countries(
-        self: "BiblioGroup",
+        self: BiblioGroup,
         *,
         include_stats: Tuple[str, ...] = ("diversity", "correspondence", "chi2", "svd", "log-ratio"),
         clean_zeros: bool = True,
@@ -544,7 +820,7 @@ class GroupAssociationsMixin:
         sep: Optional[str] = None,
         filename: Optional[str] = "associated countries",
         **kwargs: Any,
-    ) -> "BiblioGroup":
+    ) -> BiblioGroup:
         """
         Relate fixed groups to Countries.
 
@@ -596,7 +872,7 @@ class GroupAssociationsMixin:
         )
 
     def associate_affiliations(
-        self: "BiblioGroup",
+        self: BiblioGroup,
         *,
         include_stats: Tuple[str, ...] = ("diversity", "correspondence", "chi2", "svd", "log-ratio"),
         clean_zeros: bool = True,
@@ -608,7 +884,7 @@ class GroupAssociationsMixin:
         sep: Optional[str] = None,
         filename: Optional[str] = "associated affiliations",
         **kwargs: Any,
-    ) -> "BiblioGroup":
+    ) -> BiblioGroup:
         """Relate fixed groups to Affiliations."""
         if sep is None:
             sep = getattr(self, "default_separator", "; ")
@@ -633,7 +909,7 @@ class GroupAssociationsMixin:
         )
 
     def associate_references(
-        self: "BiblioGroup",
+        self: BiblioGroup,
         *,
         include_stats: Tuple[str, ...] = ("diversity", "correspondence", "chi2", "svd", "log-ratio"),
         clean_zeros: bool = True,
@@ -645,7 +921,7 @@ class GroupAssociationsMixin:
         sep: Optional[str] = None,
         filename: Optional[str] = "associated references",
         **kwargs: Any,
-    ) -> "BiblioGroup":
+    ) -> BiblioGroup:
         """Relate fixed groups to References."""
         col = (
             "References"

@@ -11,9 +11,8 @@ Panel for computing and visualizing Disruption Index metrics.
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import threading
-from typing import Dict, Optional
 
-from biblium.gui.config import FONTS, LAYOUT, get_theme
+from biblium.gui.config import FONTS
 from biblium.gui.core.events import event_bus, EventBus
 from biblium.gui.panels.base import BasePanel
 from biblium.gui.widgets.cards import Card, CollapsibleCard, StatsCard, CardGrid
@@ -449,7 +448,7 @@ class DisruptionIndexPanel(BasePanel):
         except Exception as e:
             import traceback
             traceback.print_exc()
-            ax.text(0.5, 0.5, f"Error: {str(e)}", ha='center', va='center', transform=ax.transAxes)
+            ax.text(0.5, 0.5, f"Error: {e!s}", ha='center', va='center', transform=ax.transAxes)
             plot_frame.refresh()
     
     def _plot_distribution_fallback(self, df: pd.DataFrame, ax):
@@ -615,7 +614,7 @@ class DisruptionIndexPanel(BasePanel):
                 self._current_result.to_excel(filename, index=False)
                 messagebox.showinfo("Success", f"Data exported to {filename}")
             except Exception as e:
-                messagebox.showerror("Error", f"Could not export: {str(e)}")
+                messagebox.showerror("Error", f"Could not export: {e!s}")
     
     def _save_plot(self):
         """Save current plot."""
@@ -630,7 +629,7 @@ class DisruptionIndexPanel(BasePanel):
                 plt.savefig(filename, dpi=300, bbox_inches='tight')
                 messagebox.showinfo("Success", f"Plot saved to {filename}")
             except Exception as e:
-                messagebox.showerror("Error", f"Could not save: {str(e)}")
+                messagebox.showerror("Error", f"Could not save: {e!s}")
     
     def _create_info_content(self, parent):
         """Create Info tab with documentation."""

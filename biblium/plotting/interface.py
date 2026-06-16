@@ -25,7 +25,7 @@ Usage
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, TYPE_CHECKING, Union
+from typing import Any, List, Optional, TYPE_CHECKING
 
 import pandas as pd
 import numpy as np
@@ -79,7 +79,7 @@ class PlotInterface:
     
     def __init__(
         self,
-        biblio: "BiblioStats",
+        biblio: BiblioStats,
         default_config: Optional[PlotConfig] = None,
     ):
         self._biblio = biblio
@@ -579,14 +579,14 @@ class PlotInterface:
             config = config.update(title="Annual Scientific Production")
         
         fig = self._Plot().bar(df, x="Year", y=y_col, config=config, **kwargs)
-        
+
         if filename:
             save_path = self._get_save_path(filename)
             if save_path:
                 self._Plot().save(fig, save_path, config)
-        
+
         return fig
-    
+
     # =========================================================================
     # DOCUMENT TYPES
     # =========================================================================
@@ -882,115 +882,388 @@ class PlotInterface:
         
         return fig
     
+    # ---------------------------------------------------------------------
+    # Rich scatter (log-log, size, color) — internal helper used by
+    # sources_scatter / authors_scatter / countries_scatter.
+    # Routes through plotbib.plot_scatter (richer than backend's scatter:
+    # supports x_scale/y_scale, size_col, color_col, adjustText labels).
+    # ---------------------------------------------------------------------
+    def _rich_scatter_top_items(
+        self,
+        items: str,
+        top_n: int,
+        x_metric: str,
+        y_metric: str,
+        label_col: Optional[str],
+        size_col: Optional[str],
+        color_col: Optional[str],
+        x_scale: str,
+        y_scale: str,
+        config: Optional[PlotConfig],
+        filename: Optional[str],
+        prefer_stats: bool,
+        **kwargs,
+    ) -> Any:
+        items_meta = {
+            "sources":   {"counts": "sources_counts_df",
+                          "stats":  "sources_stats_df",
+                          "count_fn": "count_sources",
+                          "stats_fn": "get_sources_stats",
+                          "title":  "Sources",
+                          "default_label": "Source"},
+            "authors":   {"counts": "authors_counts_df",
+                          "stats":  "authors_stats_df",
+                          "count_fn": "count_authors",
+                          "stats_fn": "get_authors_stats",
+                          "title":  "Authors",
+                          "default_label": "Author"},
+            "countries": {"counts": "all_countries_counts_df",
+                          "stats":  "all_countries_stats_df",
+                          "count_fn": "count_all_countries",
+                          "stats_fn": "get_all_countries_stats",
+                          "title":  "Countries",
+                          "default_label": "Country"},
+            "institutions": {"counts": "institutions_counts_df",
+                              "stats":  "institutions_stats_df",
+                              "count_fn": "_synth_institutions_counts",
+                              "stats_fn": "_synth_institutions_stats",
+                              "title":  "Institutions",
+                              "default_label": "Institution"},
+        }
+        meta = items_meta[items]
+
+        # Pull the right df — prefer stats_df when we ask for size/color
+        # (H-index, Mean year, etc. live there); else counts_df is fine.
+        wants_extra = bool(size_col) or bool(color_col) or prefer_stats
+        attr = meta["stats"] if wants_extra else meta["counts"]
+        df = getattr(self._biblio, attr, None)
+        if df is None:
+            # Build prerequisites
+            fn_name = meta["stats_fn"] if wants_extra else meta["count_fn"]
+            getattr(self._biblio, fn_name)()
+            df = getattr(self._biblio, attr, None)
+            if df is None and wants_extra:
+                # Fall back to counts if stats unavailable
+                getattr(self._biblio, meta["count_fn"])()
+                df = getattr(self._biblio, meta["counts"], None)
+
+        if df is None or len(df) == 0:
+            return None
+        df = df.head(top_n).copy()
+
+        # Find label column
+        if label_col is None:
+            for c in (meta["default_label"], "Authors", df.columns[0]):
+                if isinstance(c, str) and c in df.columns:
+                    label_col = c
+                    break
+
+        # Sanitize x/y/size/color — drop ones that aren't in df
+        def _exists(c):
+            return isinstance(c, str) and c in df.columns
+
+        if not _exists(x_metric):
+            x_metric = "Number of documents" if _exists("Number of documents") else df.columns[1]
+        if not _exists(y_metric):
+            y_metric = "Total citations" if _exists("Total citations") else df.columns[2]
+
+        size_col_ok = size_col if _exists(size_col) else None
+        color_col_ok = color_col if _exists(color_col) else None
+
+        config = self._merge_config(config)
+        if config.title is None:
+            config = config.update(title=f"Top {top_n} {meta['title']}")
+
+        # Route to plotbib.plot_scatter (rich, supports log-log + adjustText)
+        save_path = self._get_save_path(filename) if filename else None
+        try:
+            from biblium import plotbib
+        except Exception:
+            plotbib = None
+
+        if plotbib is not None and hasattr(plotbib, "plot_scatter"):
+            ps_kwargs = dict(
+                x=x_metric,
+                y=y_metric,
+                size_col=size_col_ok,
+                color_col=color_col_ok,
+                label_col=label_col,
+                x_scale=x_scale,
+                y_scale=y_scale,
+                title=getattr(config, "title", None),
+                filename=(str(save_path).rsplit(".", 1)[0]
+                          if save_path else filename or f"{items}_scatter"),
+                dpi=getattr(config, "dpi", 600) or 600,
+                show=False,
+            )
+            # Merge user kwargs (let user override anything)
+            ps_kwargs.update(kwargs)
+            return plotbib.plot_scatter(df, **ps_kwargs)
+
+        # Fallback (no plotbib): backend scatter
+        fig = self._Plot().scatter(
+            df, x=x_metric, y=y_metric,
+            size=size_col_ok, color=color_col_ok,
+            config=config, **kwargs,
+        )
+        if save_path:
+            self._Plot().save(fig, save_path, config)
+        return fig
+
+    def sources_scatter(
+        self,
+        top_n: int = 20,
+        x_metric: str = "Number of documents",
+        y_metric: str = "Total citations",
+        size_col: Optional[str] = None,
+        color_col: Optional[str] = None,
+        x_scale: str = "log",
+        y_scale: str = "log",
+        config: Optional[PlotConfig] = None,
+        filename: Optional[str] = "sources_scatter",
+        prefer_stats: bool = True,
+        **kwargs,
+    ) -> Any:
+        """
+        Scatter plot of top sources (e.g. Number of documents × Total citations).
+
+        Parameters
+        ----------
+        top_n : int
+            Number of top sources to plot.
+        x_metric, y_metric : str
+            Metrics for x/y axes (default: Number of documents × Total citations).
+        size_col : str, optional
+            Column to encode as marker size (e.g. "H-index").
+        color_col : str, optional
+            Column to encode as marker color (e.g. "Mean year").
+        x_scale, y_scale : str
+            Axis scale ("log" or "linear"). Defaults to log-log.
+        prefer_stats : bool, default True
+            Pull from sources_stats_df instead of sources_counts_df so
+            extra metrics (H-index, year, etc.) are available.
+        """
+        return self._rich_scatter_top_items(
+            "sources", top_n, x_metric, y_metric,
+            label_col="Source",
+            size_col=size_col, color_col=color_col,
+            x_scale=x_scale, y_scale=y_scale,
+            config=config, filename=filename,
+            prefer_stats=prefer_stats, **kwargs,
+        )
+
     def authors_scatter(
         self,
         top_n: int = 20,
         x_metric: str = "Number of documents",
         y_metric: str = "Total citations",
+        size_col: Optional[str] = None,
+        color_col: Optional[str] = None,
+        x_scale: str = "log",
+        y_scale: str = "log",
         config: Optional[PlotConfig] = None,
         filename: Optional[str] = "authors_scatter",
+        prefer_stats: bool = True,
         **kwargs,
     ) -> Any:
         """
         Scatter plot of top authors.
-        
+
         Parameters
         ----------
         top_n : int
             Number of top authors to plot.
-        x_metric : str
-            Metric for x-axis.
-        y_metric : str
-            Metric for y-axis.
+        x_metric, y_metric : str
+            Metrics for x/y axes.
+        size_col, color_col : str, optional
+            Encode size/color from any column in the authors stats DataFrame
+            (e.g. "H-index", "Mean year").
+        x_scale, y_scale : str
+            Axis scale ("log" or "linear"). Defaults to log-log.
+        prefer_stats : bool, default True
+            Pull from authors_stats_df for extra metrics (H-index, year).
         """
-        if not hasattr(self._biblio, "authors_counts_df") or self._biblio.authors_counts_df is None:
-            self._biblio.count_authors()
-        
-        df = self._biblio.authors_counts_df.head(top_n).copy()
-        
-        # Find the author column
-        author_col = None
-        for col in ["Author", "Authors", df.columns[0]]:
-            if col in df.columns:
-                author_col = col
-                break
-        
-        if x_metric not in df.columns:
-            x_metric = "Number of documents"
-        if y_metric not in df.columns:
-            y_metric = "Total citations" if "Total citations" in df.columns else "Number of documents"
-        
-        config = self._merge_config(config)
-        if config.title is None:
-            config = config.update(title=f"Top {top_n} Authors")
-        
-        fig = self._Plot().scatter(
-            df,
-            x=x_metric,
-            y=y_metric,
-            label=author_col,
-            config=config,
-            **kwargs
+        return self._rich_scatter_top_items(
+            "authors", top_n, x_metric, y_metric,
+            label_col=None,
+            size_col=size_col, color_col=color_col,
+            x_scale=x_scale, y_scale=y_scale,
+            config=config, filename=filename,
+            prefer_stats=prefer_stats, **kwargs,
         )
-        
-        if filename:
-            save_path = self._get_save_path(filename)
-            if save_path:
-                self._Plot().save(fig, save_path, config)
-        
-        return fig
-    
+
     def countries_scatter(
         self,
         top_n: int = 20,
         x_metric: str = "Number of documents",
         y_metric: str = "Total citations",
+        size_col: Optional[str] = None,
+        color_col: Optional[str] = None,
+        x_scale: str = "log",
+        y_scale: str = "log",
         config: Optional[PlotConfig] = None,
         filename: Optional[str] = "countries_scatter",
+        prefer_stats: bool = True,
         **kwargs,
     ) -> Any:
         """
         Scatter plot of top countries.
-        
+
         Parameters
         ----------
         top_n : int
             Number of top countries to plot.
-        x_metric : str
-            Metric for x-axis.
-        y_metric : str
-            Metric for y-axis.
+        x_metric, y_metric : str
+            Metrics for x/y axes.
+        size_col, color_col : str, optional
+            Encode size/color from any column in the countries stats DataFrame
+            (e.g. "H-index", "Mean year").
+        x_scale, y_scale : str
+            Axis scale ("log" or "linear"). Defaults to log-log.
+        prefer_stats : bool, default True
+            Pull from all_countries_stats_df for extra metrics.
         """
-        if not hasattr(self._biblio, "all_countries_counts_df") or self._biblio.all_countries_counts_df is None:
-            self._biblio.count_all_countries()
-        
-        df = self._biblio.all_countries_counts_df.head(top_n).copy()
-        
-        if x_metric not in df.columns:
-            x_metric = "Number of documents"
-        if y_metric not in df.columns:
-            y_metric = "Total citations" if "Total citations" in df.columns else "Number of documents"
-        
-        config = self._merge_config(config)
-        if config.title is None:
-            config = config.update(title=f"Top {top_n} Countries")
-        
-        fig = self._Plot().scatter(
-            df,
-            x=x_metric,
-            y=y_metric,
-            label="Country",
-            config=config,
-            **kwargs
+        return self._rich_scatter_top_items(
+            "countries", top_n, x_metric, y_metric,
+            label_col="Country",
+            size_col=size_col, color_col=color_col,
+            x_scale=x_scale, y_scale=y_scale,
+            config=config, filename=filename,
+            prefer_stats=prefer_stats, **kwargs,
         )
-        
-        if filename:
-            save_path = self._get_save_path(filename)
-            if save_path:
-                self._Plot().save(fig, save_path, config)
-        
-        return fig
-    
+
+    def institutions_scatter(
+        self,
+        top_n: int = 60,
+        x_metric: str = "n_papers",
+        y_metric: str = "total_citations",
+        size_col: Optional[str] = "h_index",
+        color_col: Optional[str] = "mean_year",
+        x_scale: str = "log",
+        y_scale: str = "log",
+        institutions_col: str = "oa_institutions",
+        institution_sep: str = "; ",
+        filename: Optional[str] = "institutions_scatter",
+        config: Optional[PlotConfig] = None,
+        **kwargs,
+    ) -> Any:
+        """
+        Scatter plot of top institutions from OpenAlex.
+
+        Synthesises an institutions stats DataFrame on the fly from
+        `oa_institutions` column (semicolon-separated names) by exploding
+        and aggregating per-document citations and years. Columns produced:
+          n_papers, total_citations, mean_citations, h_index, mean_year.
+
+        Parameters
+        ----------
+        top_n : int
+            Number of top institutions (by n_papers).
+        x_metric, y_metric : str
+            Defaults: n_papers x total_citations.
+        size_col : str, optional
+            Default "h_index" (within-corpus Hirsch index per institution).
+        color_col : str, optional
+            Default "mean_year".
+        institutions_col, institution_sep : str
+            Source column and separator (default OpenAlex format).
+        """
+        # Synthesize stats; cache on self for later reuse
+        if not hasattr(self._biblio, "institutions_stats_df") \
+                or self._biblio.institutions_stats_df is None:
+            self._synth_institutions_stats(
+                institutions_col=institutions_col,
+                sep=institution_sep,
+            )
+        return self._rich_scatter_top_items(
+            "institutions", top_n, x_metric, y_metric,
+            label_col="institution",
+            size_col=size_col, color_col=color_col,
+            x_scale=x_scale, y_scale=y_scale,
+            config=config, filename=filename,
+            prefer_stats=True, **kwargs,
+        )
+
+    def _synth_institutions_stats(
+        self,
+        institutions_col: str = "oa_institutions",
+        sep: str = "; ",
+        citation_col: str = "Cited by",
+        year_col: str = "Year",
+        min_papers: int = 3,
+    ) -> "pd.DataFrame":
+        """Build institutions_stats_df by exploding `oa_institutions`."""
+        import pandas as pd
+        import numpy as np
+
+        df = self._biblio.df
+        if institutions_col not in df.columns:
+            self._biblio.institutions_stats_df = None
+            return None
+
+        df_y = pd.to_numeric(df[year_col], errors="coerce") if year_col in df.columns else None
+        df_c = pd.to_numeric(df[citation_col], errors="coerce").fillna(0) \
+            if citation_col in df.columns else None
+
+        records = []
+        for idx, val in df[institutions_col].items():
+            if not isinstance(val, str) or not val.strip():
+                continue
+            yr = float(df_y.loc[idx]) if df_y is not None and pd.notna(df_y.loc[idx]) else np.nan
+            ct = float(df_c.loc[idx]) if df_c is not None else 0.0
+            for inst in val.split(sep):
+                inst = inst.strip()
+                if inst:
+                    records.append({"institution": inst, "year": yr, "cit": ct, "doc": idx})
+        long = pd.DataFrame(records)
+        if long.empty:
+            self._biblio.institutions_stats_df = pd.DataFrame()
+            return self._biblio.institutions_stats_df
+
+        rows = []
+        for name, grp in long.groupby("institution"):
+            doc_idxs = grp["doc"].unique()
+            n_papers = len(doc_idxs)
+            if n_papers < min_papers:
+                continue
+            cits = grp.drop_duplicates("doc")["cit"].values
+            # h-index
+            s = sorted(cits, reverse=True)
+            h = 0
+            for i, c in enumerate(s, 1):
+                if c >= i:
+                    h = i
+                else:
+                    break
+            rows.append({
+                "institution": name,
+                "n_papers": int(n_papers),
+                "total_citations": int(cits.sum()),
+                "mean_citations": float(round(cits.mean(), 2)) if len(cits) else 0.0,
+                "h_index": int(h),
+                "mean_year": float(round(grp["year"].mean(), 1))
+                              if grp["year"].notna().any() else np.nan,
+            })
+        out = (pd.DataFrame(rows)
+                  .sort_values("n_papers", ascending=False)
+                  .reset_index(drop=True))
+        self._biblio.institutions_stats_df = out
+        # Also expose counts_df alias for the items_meta lookup
+        self._biblio.institutions_counts_df = out[["institution", "n_papers"]].copy()
+        return out
+
+    def _synth_institutions_counts(
+        self,
+        institutions_col: str = "oa_institutions",
+        sep: str = "; ",
+    ) -> "pd.DataFrame":
+        """Counts-only helper (delegates to _synth_institutions_stats)."""
+        if not hasattr(self._biblio, "institutions_counts_df") \
+                or self._biblio.institutions_counts_df is None:
+            self._synth_institutions_stats(institutions_col=institutions_col, sep=sep)
+        return getattr(self._biblio, "institutions_counts_df", None)
+
+
     # =========================================================================
     # COMPARISON
     # =========================================================================
@@ -1148,7 +1421,8 @@ class PlotInterface:
         nodes = pd.DataFrame({"id": matrix.columns.tolist()})
         
         edges_df = build_links_from_matrix(matrix)
-        edges_df = edges_df[edges_df["Weight"] >= min_edge_weight]
+        # FIX: build_links_from_matrix vrača stolpec "weight" (male črke)
+        edges_df = edges_df[edges_df["weight"] >= min_edge_weight]
         edges_df = edges_df.rename(columns={"Source": "source", "Target": "target", "Weight": "weight"})
         
         config = self._merge_config(config)

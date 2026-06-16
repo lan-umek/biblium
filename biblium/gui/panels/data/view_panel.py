@@ -7,12 +7,10 @@ Panel for viewing and exploring the dataset.
 
 import tkinter as tk
 from tkinter import ttk, messagebox
-from typing import Optional
 
-from biblium.gui.config import FONTS, LAYOUT, get_theme
-from biblium.gui.core.events import event_bus, EventBus
+from biblium.gui.config import FONTS
 from biblium.gui.panels.base import BasePanel
-from biblium.gui.widgets.cards import Card, StatsCard, CardGrid, ScrollableStatsRow
+from biblium.gui.widgets.cards import Card, StatsCard, ScrollableStatsRow
 from biblium.gui.widgets.buttons import ThemedButton
 from biblium.gui.widgets.forms import LabeledCombobox, LabeledEntry, DualListSelector
 from biblium.gui.widgets.tables import DataTable

@@ -8,14 +8,13 @@ Bibliometric laws analysis: Lotka, Bradford, Zipf, Price, Pareto.
 import tkinter as tk
 from tkinter import ttk, messagebox
 import threading
-from typing import Dict, Optional
+from typing import Dict
 
-from biblium.gui.config import FONTS, LAYOUT, get_theme
-from biblium.gui.core.events import event_bus, EventBus
+from biblium.gui.config import FONTS
 from biblium.gui.panels.base import BasePanel
-from biblium.gui.widgets.cards import Card, StatsCard, CardGrid
-from biblium.gui.widgets.buttons import ThemedButton, ActionButton
-from biblium.gui.widgets.forms import LabeledCombobox, LabeledCheckbox, LabeledSpinbox
+from biblium.gui.widgets.cards import Card
+from biblium.gui.widgets.buttons import ActionButton
+from biblium.gui.widgets.forms import LabeledCombobox, LabeledCheckbox
 from biblium.gui.widgets.tables import DataTable
 from biblium.gui.widgets.plots import PlotFrame
 
@@ -364,10 +363,10 @@ PARETO PRINCIPLE
                         interpretation = "Lotka's Law: Authors with n publications ≈ C/n²"
                         if lotka_stats is not None and len(lotka_stats) > 0:
                             stats_dict = dict(zip(lotka_stats['Measure'], lotka_stats['Value']))
-                            r2 = stats_dict.get('R2', None)
+                            r2 = stats_dict.get('R2')
                             if r2 is not None:
                                 interpretation += f"\nR² = {r2:.3f}"
-                            ks_p = stats_dict.get('KS_pvalue', None)
+                            ks_p = stats_dict.get('KS_pvalue')
                             if ks_p is not None:
                                 interpretation += f", KS p-value = {ks_p:.4f}"
                         
@@ -1063,7 +1062,7 @@ PARETO PRINCIPLE
                             values.append(0)
                     
                     # Only plot numeric values
-                    plot_data = [(m, v) for m, v in zip(metrics, values) if v > 0 and '%' not in str(data[data["Metric"]==m]["Value"].values[0]) or 'Elite %' in m or 'Their %' in m]
+                    plot_data = [(m, v) for m, v in zip(metrics, values) if (v > 0 and '%' not in str(data[data["Metric"]==m]["Value"].values[0])) or 'Elite %' in m or 'Their %' in m]
                     if plot_data:
                         ax.barh([p[0] for p in plot_data], [p[1] for p in plot_data], color=self.theme["accent_primary"])
                 else:

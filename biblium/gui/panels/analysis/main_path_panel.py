@@ -356,12 +356,10 @@ class MainPathPanel(BasePanel):
             # Embed in tkinter
             canvas = FigureCanvasTkAgg(fig, master=self.viz_frame)
             canvas.draw()
-            _canvas_widget = canvas.get_tk_widget()
+            canvas_widget = canvas.get_tk_widget()
 
-            _canvas_widget.pack(fill=tk.BOTH, expand=True)
+            canvas_widget.pack(fill=tk.BOTH, expand=True)
             add_plot_context_menu(canvas_widget, fig)
-
-            add_plot_context_menu(_canvas_widget, fig)
             
             # Save button
             btn_frame = tk.Frame(self.viz_frame, bg=self.theme["bg_card"])

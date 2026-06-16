@@ -13,15 +13,14 @@ Features:
 
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
-from typing import Optional, Dict, Any, List
 import pandas as pd
 import numpy as np
 
 from biblium.gui.panels.base import BasePanel
-from biblium.gui.config import FONTS, get_theme
+from biblium.gui.config import FONTS
 from biblium.gui.widgets.tables import DataTable
 from biblium.gui.widgets.plots import PlotFrame
-from biblium.gui.widgets.forms import LabeledEntry, LabeledCombobox, LabeledSpinbox
+from biblium.gui.widgets.forms import LabeledSpinbox
 from biblium.gui.widgets.cards import Card
 from biblium.gui.widgets.buttons import ActionButton
 

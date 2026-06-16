@@ -14,9 +14,9 @@ Features:
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import threading
-from typing import Dict, List, Optional, Any
+from typing import Dict, List
 
-from biblium.gui.config import FONTS, LAYOUT, get_theme
+from biblium.gui.config import FONTS
 from biblium.gui.core.events import event_bus, EventBus
 from biblium.gui.panels.base import BasePanel
 from biblium.gui.widgets.cards import Card, CollapsibleCard, StatsCard, CardGrid
@@ -820,8 +820,6 @@ class GroupAssociationsPanel(BasePanel):
         """Create correspondence analysis biplot using biblium's implementation."""
         try:
             from biblium import utilsbib
-            import io
-            from PIL import Image, ImageTk
             
             # Compute CA coordinates using biblium's robust implementation
             row_coords, col_coords, explained_inertia = utilsbib.compute_correspondence_analysis(
@@ -1121,7 +1119,7 @@ class GroupAssociationsPanel(BasePanel):
                         )
                         results[key] = result
                 except Exception as e:
-                    errors.append(f"{config['label']}: {str(e)}")
+                    errors.append(f"{config['label']}: {e!s}")
             
             self.all_results = results
             self.after(0, lambda: self._display_all_summary(results, errors))

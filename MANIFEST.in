@@ -1,0 +1,26 @@
+# Keep the source distribution clean: ship the package + metadata only.
+include README.md CHANGELOG.md LICENSE pyproject.toml setup.py
+recursive-include biblium *.py
+recursive-include biblium *.xlsx *.csv *.json *.txt *.svg
+global-exclude *.py[cod]
+global-exclude __pycache__/*
+global-exclude *.fresh
+global-exclude *.test_*
+
+# Drop generated output folders (paths are project-root-relative).
+prune biblium/data/benchmark_results
+prune biblium/tests/_demo_outputs_2_16
+recursive-exclude biblium/data/benchmark_results *
+recursive-exclude biblium/tests/_demo_outputs_2_16 *
+
+# Root-level junk / build artefacts.
+prune results
+prune results-groups
+prune benchmark_results
+prune group_results
+prune tutorial_results
+prune my_biblium_results
+prune biblium_test_results
+prune biblium_test_results_final
+prune dist
+prune build

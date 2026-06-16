@@ -5,6 +5,7 @@ subgroup memberships, built on top of BiblioGroup.
 """
 
 from typing import Callable, Dict, List, Optional, Union
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -726,6 +727,11 @@ class BiblioGroupClassifier(BiblioGroup):
         save_to: Optional[str] = None,
         X: Optional[Union[pd.DataFrame, np.ndarray]] = None,
         items_of_interest: Optional[Sequence[str]] = None,
+        # --- new in 2.16: Firth-penalised logistic regression ------------
+        logit_method: str = "auto",
+        logit_ci: Optional[str] = None,
+        logit_compute_lrt: bool = False,
+        # -----------------------------------------------------------------
     ) -> Dict[str, dict]:
         """
         Perform separate logistic regressions for each subgroup in ``group_matrix``.
@@ -969,34 +975,53 @@ class BiblioGroupClassifier(BiblioGroup):
     
         # Add intercept
         X_design = sm.add_constant(X_design, has_constant="add")
-    
+
         # ------------------------------------------------------------------
-        # Fit one binary logit per group
+        # Fit one binary logit per group, using fit_logit (auto-detects
+        # near-singular designs and (quasi-)complete separation, falling
+        # back to Firth-penalised regression as needed).
         # ------------------------------------------------------------------
+        from biblium.utilsbib_modules.firth import fit_logit as _fit_logit
+
+        # X_design already has 'const' column (statsmodels.add_constant); we
+        # tell fit_logit not to add another one.
         results: Dict[str, dict] = {}
-    
+
         for grp in groups:
             y = self.group_matrix[grp].values
-    
+
             # Skip groups with less than two classes
             if np.unique(y).size < 2:
-                print(
+                warnings.warn(
                     f'Skipping logistic regression for group "{grp}": '
-                    "dependent variable has only one class."
+                    "dependent variable has only one class.",
+                    UserWarning, stacklevel=2,
                 )
                 continue
-    
+
             try:
-                model = sm.Logit(y, X_design).fit(disp=False)
-                coef_table = model.summary2().tables[1]
+                model = _fit_logit(
+                    X_design, y,
+                    method=logit_method,
+                    ci_method=logit_ci,
+                    compute_lrt=logit_compute_lrt,
+                    add_intercept=False,  # X_design already has 'const'
+                )
+                # statsmodels-style coefficient table for backward
+                # compatibility with save_logistic_results
+                coef_table = model.to_statsmodels_compat_summary()
                 results[grp] = {"model": model, "summary": coef_table}
-            except Exception as exc:  # singular matrix, separation, etc.
-                print(f'Logit failed for group "{grp}": {exc}')
-    
+            except Exception as exc:
+                warnings.warn(
+                    f'Logit failed for group "{grp}": '
+                    f"{type(exc).__name__}: {exc}",
+                    UserWarning, stacklevel=2,
+                )
+
         # Optional: compute + save in one call
         if save_to is not None and results:
             self.save_logistic_results(results, filename=save_to)
-    
+
         return results
 
 

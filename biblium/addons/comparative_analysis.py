@@ -27,27 +27,20 @@ from __future__ import annotations
 
 import os
 import re
-import warnings
-from collections import Counter, defaultdict
+from collections import Counter
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple, Union, Set
+from typing import Any, Dict, List, Optional, Tuple
 from itertools import combinations
-import json
 
 import numpy as np
 import pandas as pd
 from scipy import stats
-from scipy.spatial.distance import cosine, jaccard
-from scipy.cluster.hierarchy import linkage, dendrogram, fcluster
+from scipy.cluster.hierarchy import linkage, fcluster
 
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
-from sklearn.decomposition import PCA
-from sklearn.manifold import TSNE
+from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics.pairwise import cosine_similarity
 
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-from matplotlib.patches import Polygon
 import seaborn as sns
 
 # Optional imports
@@ -978,7 +971,6 @@ def plot_comparison_overview(
     """Plot papers and citations comparison."""
     fig, ax = plt.subplots(figsize=figsize)
     ax.grid(False)
-    ax.grid(False)
     
     # Papers and Citations comparison
     x = range(len(result.entities))
@@ -1014,7 +1006,6 @@ def plot_mean_citations_comparison(
     """Plot mean citations comparison."""
     fig, ax = plt.subplots(figsize=figsize)
     ax.grid(False)
-    ax.grid(False)
     
     mean_cit = [result.entity_metrics[e].mean_citations for e in result.entities]
     
@@ -1048,7 +1039,6 @@ def plot_normalized_metrics_heatmap(
     """Plot normalized metrics heatmap."""
     fig, ax = plt.subplots(figsize=figsize)
     ax.grid(False)
-    ax.grid(False)
     
     mc = result.multiple_comparison
     norm_df = mc.normalized_metrics_df.set_index("Entity")
@@ -1076,7 +1066,6 @@ def plot_similarity_matrix(
 ) -> plt.Figure:
     """Plot pairwise similarity matrix."""
     fig, ax = plt.subplots(figsize=figsize)
-    ax.grid(False)
     ax.grid(False)
     
     mc = result.multiple_comparison
@@ -1162,7 +1151,6 @@ def plot_temporal_comparison(
     """Plot papers over time."""
     fig, ax = plt.subplots(figsize=figsize)
     ax.grid(False)
-    ax.grid(False)
     
     ax.bar(temporal_df["Period"], temporal_df["Papers"], color="lightblue", edgecolor="white")
     ax.set_xlabel("Period", fontsize=11)
@@ -1188,7 +1176,6 @@ def plot_temporal_citations(
 ) -> plt.Figure:
     """Plot mean citations over time."""
     fig, ax = plt.subplots(figsize=figsize)
-    ax.grid(False)
     ax.grid(False)
     
     ax.plot(temporal_df["Period"], temporal_df["Mean_Citations"], marker="o", 
@@ -1218,7 +1205,6 @@ def plot_temporal_hindex(
     """Plot H-index over time."""
     fig, ax = plt.subplots(figsize=figsize)
     ax.grid(False)
-    ax.grid(False)
     
     ax.plot(temporal_df["Period"], temporal_df["H_Index"], marker="s",
             linewidth=2, color="lightblue", markersize=8)
@@ -1246,7 +1232,6 @@ def plot_benchmark_comparison(
 ) -> plt.Figure:
     """Plot benchmark side-by-side comparison."""
     fig, ax = plt.subplots(figsize=figsize)
-    ax.grid(False)
     ax.grid(False)
     
     df = benchmark_result.metrics_comparison
@@ -1285,7 +1270,6 @@ def plot_relative_performance(
     """Plot relative performance vs benchmark."""
     fig, ax = plt.subplots(figsize=figsize)
     ax.grid(False)
-    ax.grid(False)
     
     rel_perf = list(benchmark_result.relative_performance.values())
     metrics = list(benchmark_result.relative_performance.keys())
@@ -1323,7 +1307,6 @@ def plot_ranking_comparison(
     
     fig, ax = plt.subplots(figsize=figsize)
     ax.grid(False)
-    ax.grid(False)
     
     x = np.arange(len(metric_cols))
     width = 0.8 / len(result.entities)
@@ -1341,9 +1324,6 @@ def plot_ranking_comparison(
     ax.legend(loc="upper right")
     ax.invert_yaxis()  # Lower rank is better
     
-    # Disable grids
-    for _ax in axes.flat:
-        _
     plt.tight_layout()
     
     if save_path:

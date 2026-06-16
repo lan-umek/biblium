@@ -15,8 +15,7 @@ Features:
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple, Any
-import warnings
+from typing import Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -605,7 +604,6 @@ def tukey_hsd(groups: Dict[str, pd.Series]) -> List[PostHocResult]:
     list of PostHocResult
     """
     try:
-        from scipy import stats
         
         clean_groups = {k: v.dropna() for k, v in groups.items()}
         clean_groups = {k: v for k, v in clean_groups.items() if len(v) > 0}

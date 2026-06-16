@@ -11,15 +11,14 @@ import threading
 import pandas as pd
 import io
 import os
-from typing import Optional
 
 from biblium.gui.panels.base import BasePanel
 from biblium.gui.widgets.buttons import ActionButton, ThemedButton
 from biblium.gui.widgets.cards import Card, StatsCard, CardGrid
-from biblium.gui.widgets.forms import LabeledCombobox, LabeledEntry, LabeledCheckbox
+from biblium.gui.widgets.forms import LabeledCombobox, LabeledCheckbox
 from biblium.gui.widgets.tables import DataTable
 from biblium.gui.widgets.plots import ScaledImageFrame
-from biblium.gui.config import FONTS, get_theme
+from biblium.gui.config import FONTS
 from biblium.gui.core.events import event_bus, EventBus
 
 
@@ -293,7 +292,7 @@ class SDGPanel(BasePanel):
             except Exception as e:
                 import traceback
                 traceback.print_exc()
-                self.after(0, lambda: self._show_error(str(e)))
+                self.after(0, lambda msg=str(e): self._show_error(msg))
         
         threading.Thread(target=do_identification, daemon=True).start()
     

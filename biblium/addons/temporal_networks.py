@@ -20,30 +20,19 @@ Created for integration with the Biblium bibliometric toolkit.
 from __future__ import annotations
 
 import os
-import re
-import warnings
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union, Set
-from itertools import combinations
+from typing import Any, Dict, List, Optional, Tuple, Set
 import json
 
 import numpy as np
 import pandas as pd
 import networkx as nx
-from scipy.stats import entropy, spearmanr, pearsonr
-from scipy.spatial.distance import cosine, jensenshannon
-from scipy.cluster.hierarchy import linkage, fcluster
 
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
-from matplotlib.colors import Normalize, LinearSegmentedColormap, to_rgba
-from matplotlib.cm import ScalarMappable
-from matplotlib.lines import Line2D
-from matplotlib.patches import FancyArrowPatch, Rectangle, FancyBboxPatch
-from matplotlib.collections import LineCollection
+from matplotlib.colors import Normalize
 import matplotlib.animation as animation
-import seaborn as sns
 
 # Import core biblium bridge
 try:
@@ -1308,9 +1297,6 @@ def plot_network_evolution(
         title = f"Temporal {analysis.network_type.title()} Network Evolution"
     fig.suptitle(title, fontsize=14, fontweight='bold', y=1.02)
     
-    # Disable grids
-    for _ax in axes.flat:
-        _
     plt.tight_layout()
     
     if save_path:
@@ -1365,7 +1351,6 @@ def plot_node_trajectories(
     
     fig, ax = plt.subplots(figsize=figsize)
     ax.grid(False)
-    ax.grid(False)
     
     periods = analysis.periods
     x = range(len(periods))
@@ -1406,9 +1391,6 @@ def plot_node_trajectories(
     ax.legend(bbox_to_anchor=(1.02, 1), loc='upper left', fontsize=9)
     ax
     
-    # Disable grids
-    for _ax in axes.flat:
-        _
     plt.tight_layout()
     
     if save_path:
@@ -1449,7 +1431,6 @@ def plot_edge_persistence(
     matplotlib Figure.
     """
     fig, ax = plt.subplots(figsize=figsize)
-    ax.grid(False)
     ax.grid(False)
     
     # Calculate persistence ratios
@@ -1514,7 +1495,6 @@ def plot_community_evolution(
     matplotlib Figure.
     """
     fig, ax = plt.subplots(figsize=figsize)
-    ax.grid(False)
     ax.grid(False)
     
     periods = analysis.periods
@@ -1753,9 +1733,6 @@ def plot_network_snapshots(
         title = f"Temporal {analysis.network_type.title()} Network Snapshots"
     fig.suptitle(title, fontsize=14, fontweight='bold', y=1.02)
     
-    # Disable grids
-    for _ax in axes.flat:
-        _
     plt.tight_layout()
     
     if save_path:
@@ -1805,7 +1782,6 @@ def plot_node_lifecycle(
         nodes = [n[0] for n in node_activity[:top_n]]
     
     fig, ax = plt.subplots(figsize=figsize)
-    ax.grid(False)
     ax.grid(False)
     
     periods = analysis.periods
@@ -1921,7 +1897,6 @@ def plot_network_comparison(
     
     fig, ax = plt.subplots(figsize=figsize)
     ax.grid(False)
-    ax.grid(False)
     
     # Compute shared layout using union graph
     G_union = nx.compose(G1, G2)
@@ -2031,7 +2006,6 @@ def create_animated_network(
     
     fig, ax = plt.subplots(figsize=figsize)
     ax.grid(False)
-    ax.grid(False)
     
     def update(frame_idx):
         ax.clear()
@@ -2050,7 +2024,8 @@ def create_animated_network(
         if snapshot.communities:
             communities = [snapshot.communities.get(n, 0) for n in G.nodes()]
             # Using single color
-            node_colors = [cmap(c % 12) for c in communities]
+            _cmap = plt.get_cmap('tab10')
+            node_colors = [_cmap(c % 12) for c in communities]
         else:
             node_colors = 'lightblue'
         

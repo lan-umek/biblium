@@ -6,7 +6,7 @@ Compare Means Panel - SPSS-like interface
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 
-from biblium.gui.config import FONTS, get_theme
+from biblium.gui.config import FONTS
 from biblium.gui.core.events import event_bus, EventBus
 from biblium.gui.panels.base import BasePanel
 from biblium.gui.widgets.buttons import ActionButton

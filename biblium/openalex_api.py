@@ -36,14 +36,10 @@ from __future__ import annotations
 
 import time
 import warnings
-from typing import Any, Dict, Generator, List, Literal, Optional, Tuple, Union
-from urllib.parse import quote, urlencode
+from typing import Any, Dict, List, Literal, Optional, Tuple
 from dataclasses import dataclass, field
-from datetime import datetime
-import json
 
 import pandas as pd
-import numpy as np
 
 try:
     import requests
@@ -152,7 +148,7 @@ class OpenAlexWork:
     raw_data: Dict = field(default_factory=dict)
     
     @classmethod
-    def from_api_response(cls, data: Dict) -> "OpenAlexWork":
+    def from_api_response(cls, data: Dict) -> OpenAlexWork:
         """Create from API response."""
         # Extract authors
         authors = []
@@ -261,7 +257,7 @@ class OpenAlexAuthor:
     raw_data: Dict = field(default_factory=dict)
     
     @classmethod
-    def from_api_response(cls, data: Dict) -> "OpenAlexAuthor":
+    def from_api_response(cls, data: Dict) -> OpenAlexAuthor:
         """Create from API response."""
         summary = data.get("summary_stats", {})
         
@@ -302,7 +298,7 @@ class OpenAlexInstitution:
     raw_data: Dict = field(default_factory=dict)
     
     @classmethod
-    def from_api_response(cls, data: Dict) -> "OpenAlexInstitution":
+    def from_api_response(cls, data: Dict) -> OpenAlexInstitution:
         """Create from API response."""
         return cls(
             id=data.get("id", ""),
@@ -1132,79 +1128,210 @@ class OpenAlexClient:
         doi_column: str = "DOI",
         fields: Optional[List[str]] = None,
         progress: bool = True,
-        delay: float = 0.1,
+        delay: float = 0.15,
+        batch_size: int = 50,
+        cache_dir: Optional[str] = None,
     ) -> pd.DataFrame:
         """
-        Enrich a DataFrame with OpenAlex metadata.
-        
+        Enrich a DataFrame with OpenAlex metadata, matched by DOI.
+
+        Works with any source database (Scopus, Web of Science, ...) -- only
+        a DOI column is required. DOIs are fetched in BATCHES (OpenAlex
+        OR-filter, up to 50 per request) instead of one request per row,
+        which means ~50x fewer requests. Optionally RESUMABLE via an
+        on-disk JSON cache (an interrupted run continues where it stopped).
+
+        Added columns (prefix ``oa_``):
+          oa_openalex_id, oa_cited_by_count, oa_is_oa, oa_oa_status,
+          oa_publication_year, oa_type, oa_primary_topic, oa_subfield,
+          oa_field, oa_domain, oa_topics, oa_concepts, oa_sdgs,
+          oa_referenced_works, oa_n_referenced_works, oa_counts_by_year,
+          oa_institutions, oa_institution_rors, oa_institution_countries,
+          oa_n_institutions
+
+        ``oa_referenced_works`` (OpenAlex reference IDs) enables an
+        intra-corpus citation network even when the source database's
+        references carry no DOIs; ``oa_institution_rors`` provides
+        disambiguated institutions (ROR IDs).
+
         Parameters
         ----------
         df : pd.DataFrame
-            Input DataFrame with DOIs.
-        doi_column : str
+            Input DataFrame containing a DOI column.
+        doi_column : str, default "DOI"
             Name of the DOI column.
-        fields : list, optional
-            Fields to add. Default: ["cited_by_count", "is_oa", "concepts", "sdgs"].
-        progress : bool
-            Show progress.
-        delay : float
-            Delay between requests.
-            
+        fields : list of str, optional
+            Subset of ``oa_`` columns to keep (with or without the ``oa_``
+            prefix). Default None keeps all enrichment columns.
+        progress : bool, default True
+            Print progress.
+        delay : float, default 0.15
+            Pause between batch requests (polite pool).
+        batch_size : int, default 50
+            DOIs per request (OpenAlex OR-filter limit is 50).
+        cache_dir : str, optional
+            If given, each batch is cached as JSON; an interrupted run
+            resumes from the cache.
+
         Returns
         -------
         pd.DataFrame
-            Enriched DataFrame with new columns.
+            Copy of ``df`` with the ``oa_`` columns merged in (matched by
+            normalised DOI).
         """
-        if fields is None:
-            fields = ["cited_by_count", "is_oa", "oa_status", "concepts", "sdgs", "topics"]
-        
+        import json
+        import os
+
+        select = (
+            "id,doi,publication_year,type,cited_by_count,counts_by_year,"
+            "referenced_works,open_access,primary_topic,topics,concepts,"
+            "authorships,sustainable_development_goals,is_retracted,"
+            "is_paratext"
+        )
+
+        def _norm_doi(doi):
+            if not isinstance(doi, str):
+                return None
+            d = doi.strip().lower()
+            for p in ("https://doi.org/", "http://doi.org/",
+                      "doi.org/", "doi:"):
+                if d.startswith(p):
+                    d = d[len(p):]
+            d = d.strip()
+            return d if d.startswith("10.") and "/" in d else None
+
+        def _names(items, key="display_name", limit=None):
+            out = []
+            for it in items or []:
+                v = (it or {}).get(key)
+                if v:
+                    out.append(str(v))
+            out = list(dict.fromkeys(out))
+            return out[:limit] if limit else out
+
+        def _parse(w):
+            pt = w.get("primary_topic") or {}
+            oa = w.get("open_access") or {}
+            refs = [r.replace("https://openalex.org/", "")
+                    for r in (w.get("referenced_works") or [])]
+            insts, rors, countries = [], [], []
+            for a in (w.get("authorships") or []):
+                for inst in (a.get("institutions") or []):
+                    if inst.get("display_name"):
+                        insts.append(inst["display_name"])
+                    if inst.get("ror"):
+                        rors.append(inst["ror"])
+                    if inst.get("country_code"):
+                        countries.append(inst["country_code"])
+            insts = list(dict.fromkeys(insts))
+            rors = list(dict.fromkeys(rors))
+            countries = list(dict.fromkeys(countries))
+            return {
+                "doi": _norm_doi(w.get("doi") or ""),
+                "oa_openalex_id": (w.get("id") or "").replace(
+                    "https://openalex.org/", ""),
+                "oa_cited_by_count": w.get("cited_by_count"),
+                "oa_is_oa": oa.get("is_oa"),
+                "oa_oa_status": oa.get("oa_status"),
+                "oa_publication_year": w.get("publication_year"),
+                "oa_type": w.get("type"),
+                "oa_primary_topic": pt.get("display_name"),
+                "oa_subfield": (pt.get("subfield") or {}).get("display_name"),
+                "oa_field": (pt.get("field") or {}).get("display_name"),
+                "oa_domain": (pt.get("domain") or {}).get("display_name"),
+                "oa_topics": "|".join(_names(w.get("topics"), limit=5)),
+                "oa_fields": "; ".join(_names(
+                    [t.get("field") for t in (w.get("topics") or [])])),
+                "oa_subfields": "; ".join(_names(
+                    [t.get("subfield") for t in (w.get("topics") or [])])),
+                "oa_domains": "; ".join(_names(
+                    [t.get("domain") for t in (w.get("topics") or [])])),
+                "oa_concepts": "|".join(_names(w.get("concepts"), limit=5)),
+                "oa_sdgs": "|".join(
+                    _names(w.get("sustainable_development_goals"))),
+                "oa_referenced_works": "|".join(refs),
+                "oa_n_referenced_works": len(refs),
+                "oa_counts_by_year": json.dumps(w.get("counts_by_year") or []),
+                "oa_institutions": "; ".join(insts),
+                "oa_institution_rors": "|".join(rors),
+                "oa_institution_countries": "; ".join(countries),
+                "oa_n_institutions": len(insts),
+                "oa_is_retracted": bool(w.get("is_retracted"))
+                    if w.get("is_retracted") is not None else None,
+                "oa_is_paratext": bool(w.get("is_paratext"))
+                    if w.get("is_paratext") is not None else None,
+            }
+
         df = df.copy()
-        
-        # Initialize new columns
-        for field in fields:
-            if field not in df.columns:
-                df[f"oa_{field}"] = None
-        
-        n_total = len(df)
-        n_enriched = 0
-        
+        if doi_column not in df.columns:
+            warnings.warn(
+                f"DOI column '{doi_column}' not found; nothing to enrich.")
+            return df
+
+        dois = sorted({d for d in df[doi_column].map(_norm_doi) if d})
+        batches = [dois[i:i + batch_size]
+                   for i in range(0, len(dois), batch_size)]
         if progress:
-            print(f"Enriching {n_total} records from OpenAlex...")
-        
-        for idx, row in df.iterrows():
-            doi = row.get(doi_column)
-            
-            if pd.isna(doi) or not doi:
-                continue
-            
-            work = self.get_work(doi=str(doi))
-            
-            if work:
-                n_enriched += 1
-                
-                if "cited_by_count" in fields:
-                    df.at[idx, "oa_cited_by_count"] = work.cited_by_count
-                if "is_oa" in fields:
-                    df.at[idx, "oa_is_oa"] = work.is_oa
-                if "oa_status" in fields:
-                    df.at[idx, "oa_oa_status"] = work.oa_status
-                if "concepts" in fields:
-                    df.at[idx, "oa_concepts"] = "|".join([c.get("display_name", "") for c in work.concepts[:5]])
-                if "sdgs" in fields:
-                    df.at[idx, "oa_sdgs"] = "|".join([s.get("display_name", "") for s in work.sdgs])
-                if "topics" in fields:
-                    df.at[idx, "oa_topics"] = "|".join([t.get("display_name", "") for t in work.topics[:3]])
-            
-            if progress and (idx + 1) % 10 == 0:
-                print(f"  Processed {idx + 1}/{n_total} ({n_enriched} enriched)...", end="\r")
-            
-            time.sleep(delay)
-        
+            print(f"OpenAlex enrichment: {len(dois)} DOIs in "
+                  f"{len(batches)} batches of {batch_size} ...")
+
+        if cache_dir:
+            os.makedirs(cache_dir, exist_ok=True)
+
+        rows = []
+        for bi, batch in enumerate(batches):
+            cache_file = (os.path.join(cache_dir, f"oa_batch_{bi:05d}.json")
+                          if cache_dir else None)
+            works = None
+            if cache_file and os.path.isfile(cache_file):
+                try:
+                    with open(cache_file, "r", encoding="utf-8") as fh:
+                        works = json.load(fh)
+                except Exception:
+                    works = None
+            if works is None:
+                data = self._make_request("works", {
+                    "filter": "doi:" + "|".join(batch),
+                    "select": select,
+                    "per-page": 200,
+                })
+                works = (data or {}).get("results", []) or []
+                if cache_file:
+                    try:
+                        with open(cache_file, "w", encoding="utf-8") as fh:
+                            json.dump(works, fh)
+                    except Exception:
+                        pass
+                time.sleep(delay)
+            for w in works:
+                rows.append(_parse(w))
+            if progress and (bi + 1) % 10 == 0:
+                print(f"  batch {bi + 1}/{len(batches)} ...")
+
+        if not rows:
+            if progress:
+                print("  No OpenAlex records returned.")
+            return df
+
+        oa_df = pd.DataFrame(rows).dropna(subset=["doi"])
+        oa_df = oa_df.drop_duplicates(subset=["doi"])
+
+        if fields is not None:
+            keep = ["doi"] + [f if f.startswith("oa_") else f"oa_{f}"
+                              for f in fields]
+            oa_df = oa_df[[c for c in keep if c in oa_df.columns]]
+
+        df["_doi_norm"] = df[doi_column].map(_norm_doi)
+        enriched = df.merge(oa_df, left_on="_doi_norm", right_on="doi",
+                            how="left", suffixes=("", "_oa"))
+        enriched = enriched.drop(
+            columns=[c for c in ("_doi_norm", "doi") if c in enriched.columns])
         if progress:
-            print(f"  Enriched {n_enriched}/{n_total} records.          ")
-        
-        return df
-    
+            n_match = (enriched["oa_openalex_id"].notna().sum()
+                       if "oa_openalex_id" in enriched.columns else 0)
+            print(f"  matched {n_match}/{len(df)} records to OpenAlex.")
+        return enriched
+
     # =========================================================================
     # UTILITY METHODS
     # =========================================================================
@@ -1325,12 +1452,13 @@ def download_openalex_dataset(
     Returns
     -------
     pd.DataFrame
+        Search results as a DataFrame.
     """
     client = OpenAlexClient(email=email)
     df = client.download_works(query=query, filters=filters, max_results=max_results)
-    
+
     if output_path:
         df.to_csv(output_path, index=False)
         print(f"Saved {len(df)} records to {output_path}")
-    
+
     return df

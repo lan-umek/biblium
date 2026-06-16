@@ -349,7 +349,7 @@ class ConceptExtractionPanel(BasePanel):
             except Exception as e:
                 import traceback
                 traceback.print_exc()
-                self.after(0, lambda: self._on_analysis_error(str(e)))
+                self.after(0, lambda msg=str(e): self._on_analysis_error(msg))
         
         thread = threading.Thread(target=do_analysis, daemon=True)
         thread.start()
@@ -444,12 +444,10 @@ class ConceptExtractionPanel(BasePanel):
             
             self._canvas = FigureCanvasTkAgg(fig, self.viz_frame)
             self._canvas.draw()
-            _self._canvas_widget = self._canvas.get_tk_widget()
+            self._canvas_widget = self._canvas.get_tk_widget()
 
-            _self._canvas_widget.pack(fill=tk.BOTH, expand=True)
-            add_plot_context_menu(canvas_widget, fig)
-
-            add_plot_context_menu(_self._canvas_widget, fig)
+            self._canvas_widget.pack(fill=tk.BOTH, expand=True)
+            add_plot_context_menu(self._canvas_widget, fig)
             
         except Exception as e:
             import traceback

@@ -8,10 +8,10 @@ Generate word cloud visualizations from bibliometric data using biblium's implem
 import tkinter as tk
 from tkinter import ttk, messagebox
 import threading
-from typing import Dict, Optional
+from typing import Optional
 import io
 
-from biblium.gui.config import FONTS, LAYOUT, get_theme
+from biblium.gui.config import FONTS
 from biblium.gui.core.events import event_bus, EventBus
 from biblium.gui.panels.base import BasePanel
 from biblium.gui.widgets.cards import Card
@@ -315,7 +315,6 @@ class WordCloudPanel(BasePanel):
                         print(f"[DEBUG] color values sample: {df[color_by].head(5).tolist()}")
                 
                 # Use biblium's plot_wordcloud
-                from biblium import plotbib
                 
                 # Create figure without showing
                 import matplotlib.pyplot as plt
@@ -658,7 +657,7 @@ class WordCloudPanel(BasePanel):
                 )
                 self.after(0, lambda r=result: self._show_wc_ai_result(r))
             except Exception as e:
-                error_msg = f"Error: {str(e)}"
+                error_msg = f"Error: {e!s}"
                 self.after(0, lambda msg=error_msg: self._show_wc_ai_result(msg))
         
         thread = threading.Thread(target=do_generate, daemon=True)

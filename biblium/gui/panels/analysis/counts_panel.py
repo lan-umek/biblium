@@ -8,9 +8,8 @@ Panel for counting entities with statistics and visualizations.
 import tkinter as tk
 from tkinter import ttk, messagebox
 import threading
-from typing import Dict, List, Optional
 
-from biblium.gui.config import FONTS, LAYOUT, get_theme, ENTITY_TYPES
+from biblium.gui.config import FONTS, ENTITY_TYPES
 from biblium.gui.core.events import event_bus, EventBus
 from biblium.gui.panels.base import BasePanel
 from biblium.gui.widgets.cards import Card, CollapsibleCard, StatsCard, CardGrid
@@ -382,7 +381,7 @@ class CountsPanel(BasePanel):
                 
                 self.after(0, lambda: self._on_batch_success(results))
             except Exception as e:
-                self.after(0, lambda: self._on_count_error(str(e), ""))
+                self.after(0, lambda msg=str(e): self._on_count_error(msg, ""))
         
         threading.Thread(target=do_batch, daemon=True).start()
     

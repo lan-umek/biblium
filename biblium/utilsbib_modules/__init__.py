@@ -298,3 +298,29 @@ from biblium.utilsbib_modules.time_series import (
     fit_growth_model,
     fit_life_cycle_model,
 )
+
+# Permutation inference (new in 2.16)
+from biblium.utilsbib_modules.permutation import (
+    PermutationResult,
+    permutation_test,
+    assoc_permutation_test,
+    chi2_statistic,
+    cramers_v_statistic,
+    total_inertia_statistic,
+    dimension_inertias_statistic,
+    standardized_residuals_statistic,
+    adjust_p_values,
+    adaptive_n_permutations,
+    is_partition,
+    warn_if_partition,
+)
+
+# Firth-penalised logistic regression (new in 2.16)
+from biblium.utilsbib_modules.firth import (
+    LogitResult,
+    firth_logit,
+    mle_logit,
+    fit_logit,
+    is_design_ill_conditioned,
+    detect_separation_after_fit,
+)

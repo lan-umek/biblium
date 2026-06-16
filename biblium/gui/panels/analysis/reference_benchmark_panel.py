@@ -19,15 +19,13 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import threading
 import os
-from typing import Dict, List, Optional, Tuple
 
-from biblium.gui.config import FONTS, LAYOUT, get_theme
+from biblium.gui.config import FONTS
 from biblium.gui.core.events import event_bus
 from biblium.gui.panels.base import BasePanel
 from biblium.gui.widgets.cards import Card
 from biblium.gui.widgets.buttons import ThemedButton, ActionButton
-from biblium.gui.widgets.forms import LabeledCombobox, LabeledSpinbox, LabeledCheckbox, LabeledEntry
-from biblium.gui.widgets.tables import DataTable
+from biblium.gui.widgets.forms import LabeledCombobox, LabeledSpinbox, LabeledCheckbox
 from biblium.gui.widgets.plots import add_plot_context_menu, make_canvas_resizable
 
 try:
@@ -610,14 +608,11 @@ EXAMPLE USE CASES
                 # Import representation module
                 from biblium.representation import (
                     compute_relative_representation,
-                    plot_relative_representation,
-                    plot_distribution_comparison,
                     fetch_openalex_yearly_counts,
                     fetch_openalex_sdg_counts,
                     fetch_openalex_country_counts,
                     fetch_openalex_doctype_counts,
                     fetch_openalex_oa_counts,
-                    SUPPORTED_REFERENCES,
                 )
                 from scipy import stats as scipy_stats
                 

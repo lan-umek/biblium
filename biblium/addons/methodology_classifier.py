@@ -25,12 +25,10 @@ Created for integration with the Biblium bibliometric toolkit.
 from __future__ import annotations
 
 import re
-import warnings
 from collections import Counter, defaultdict
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple, Set
+from dataclasses import dataclass
+from typing import Any, Dict, List, Tuple
 
-import numpy as np
 import pandas as pd
 
 import matplotlib.pyplot as plt
@@ -369,7 +367,6 @@ def plot_paradigm_distribution(analysis: MethodologyAnalysis, figsize=(10, 6), s
     """Plot paradigm distribution as bar chart (excludes unknown)."""
     fig, ax = plt.subplots(figsize=figsize)
     ax.grid(False)
-    ax.grid(False)
     
     # Filter out 'unknown'
     filtered = {k: v for k, v in analysis.paradigm_distribution.items() if k != 'unknown'}
@@ -409,7 +406,6 @@ def plot_paradigm_distribution(analysis: MethodologyAnalysis, figsize=(10, 6), s
 def plot_method_distribution(analysis: MethodologyAnalysis, top_n=15, figsize=(12, 6), save_path=None, dpi=300):
     fig, ax = plt.subplots(figsize=figsize)
     ax.grid(False)
-    ax.grid(False)
     methods = dict(Counter(analysis.method_distribution).most_common(top_n))
     ax.barh(list(methods.keys()), list(methods.values()), color='steelblue')
     ax.set_xlabel("Papers")
@@ -427,7 +423,6 @@ def plot_sdg_methodology_heatmap(analysis: MethodologyAnalysis, figsize=(14, 10)
     
     matrix = analysis.sdg_methodology_matrix.div(analysis.sdg_methodology_matrix.sum(axis=1), axis=0).fillna(0)
     fig, ax = plt.subplots(figsize=figsize)
-    ax.grid(False)
     ax.grid(False)
     sns.heatmap(matrix, cmap="YlOrRd", annot=True, fmt=".2f", ax=ax)
     ax.set_title("SDG-Methodology Matrix")
@@ -499,7 +494,7 @@ class MethodologyMLClassifier:
         texts: List[str],
         labels: List[str],
         validate: bool = True,
-    ) -> "MethodologyMLClassifier":
+    ) -> MethodologyMLClassifier:
         """
         Train the classifier.
         

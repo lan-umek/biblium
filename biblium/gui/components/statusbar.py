@@ -7,7 +7,6 @@ Application status bar with progress indicator.
 
 import tkinter as tk
 from tkinter import ttk
-from typing import Optional
 
 from biblium.gui.config import FONTS, LAYOUT, get_theme
 from biblium.gui.core.events import event_bus, EventBus

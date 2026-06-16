@@ -8,15 +8,12 @@ Analyze top authors, sources, keywords, countries production over time.
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import threading
-import os
-from typing import Dict, List, Optional
 
-from biblium.gui.config import FONTS, LAYOUT, get_theme
-from biblium.gui.core.events import event_bus
+from biblium.gui.config import FONTS
 from biblium.gui.panels.base import BasePanel
 from biblium.gui.widgets.cards import Card
 from biblium.gui.widgets.buttons import ThemedButton, ActionButton
-from biblium.gui.widgets.forms import LabeledCombobox, LabeledSpinbox, LabeledCheckbox
+from biblium.gui.widgets.forms import LabeledCombobox, LabeledSpinbox
 from biblium.gui.widgets.tables import DataTable
 
 try:
@@ -336,7 +333,7 @@ SETTINGS
         def do_analysis():
             error_info = None
             try:
-                from biblium import utilsbib, plotbib
+                from biblium import utilsbib
                 
                 # Build column mapping from config
                 col_mapping = {key: cols for _, key, cols in AVAILABLE_ITEMS_CONFIG}

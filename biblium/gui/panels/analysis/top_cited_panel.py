@@ -8,13 +8,11 @@ Display globally and locally top-cited documents from the dataset.
 import tkinter as tk
 from tkinter import ttk, messagebox
 import threading
-from typing import Dict, Optional
 
-from biblium.gui.config import FONTS, LAYOUT, get_theme
-from biblium.gui.core.events import event_bus, EventBus
+from biblium.gui.config import FONTS
 from biblium.gui.panels.base import BasePanel
-from biblium.gui.widgets.cards import Card, CollapsibleCard
-from biblium.gui.widgets.buttons import ThemedButton, ActionButton
+from biblium.gui.widgets.cards import Card
+from biblium.gui.widgets.buttons import ThemedButton
 from biblium.gui.widgets.forms import LabeledCombobox, LabeledSpinbox
 from biblium.gui.widgets.tables import DataTable
 from biblium.gui.widgets.progress import LoadingSpinner
@@ -404,7 +402,7 @@ class TopCitedPanel(BasePanel):
             except Exception as e:
                 import traceback
                 tb = traceback.format_exc()
-                self.after(0, lambda: self._on_analysis_error(str(e), tb))
+                self.after(0, lambda msg=str(e): self._on_analysis_error(msg, tb))
         
         threading.Thread(target=do_analysis, daemon=True).start()
     

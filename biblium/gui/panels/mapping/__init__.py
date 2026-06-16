@@ -127,7 +127,7 @@ class ConceptualMapPanel(BasePanel):
                 
                 self.after(0, lambda: self._on_success(result))
             except Exception as e:
-                self.after(0, lambda: self._show_error(str(e)))
+                self.after(0, lambda msg=str(e): self._show_error(msg))
         
         threading.Thread(target=do_analysis, daemon=True).start()
     
@@ -294,7 +294,7 @@ class ThematicMapPanel(BasePanel):
                 
                 self.after(0, lambda: self._on_success(result))
             except Exception as e:
-                self.after(0, lambda: self._show_error(str(e)))
+                self.after(0, lambda msg=str(e): self._show_error(msg))
         
         threading.Thread(target=do_analysis, daemon=True).start()
     
@@ -438,7 +438,7 @@ class ClustersPanel(BasePanel):
                 
                 self.after(0, lambda: self._on_success(result))
             except Exception as e:
-                self.after(0, lambda: self._show_error(str(e)))
+                self.after(0, lambda msg=str(e): self._show_error(msg))
         
         threading.Thread(target=do_analysis, daemon=True).start()
     

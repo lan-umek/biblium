@@ -7,7 +7,7 @@ GUI panel for analyzing novelty and atypicality of papers.
 
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
-from typing import Dict, Optional
+from typing import Dict
 import pandas as pd
 
 from biblium.gui.panels.base import BasePanel
@@ -16,7 +16,7 @@ from biblium.gui.widgets.forms import LabeledCombobox, LabeledCheckbox, LabeledE
 from biblium.gui.widgets.buttons import ActionButton
 from biblium.gui.widgets.tables import DataTable
 from biblium.gui.widgets.plots import PlotFrame
-from biblium.gui.config import FONTS, get_theme
+from biblium.gui.config import FONTS
 from biblium.gui.core.events import EventBus
 
 try:
@@ -710,7 +710,7 @@ class NoveltyPanel(BasePanel):
                     result["temporal_trends"].to_excel(writer, sheet_name="Trends", index=False)
             messagebox.showinfo("Success", f"Results exported to:\n{filename}")
         except Exception as e:
-            messagebox.showerror("Error", f"Export failed:\n{str(e)}")
+            messagebox.showerror("Error", f"Export failed:\n{e!s}")
     
     def _save_plots(self, result: Dict):
         """Save plots to files."""
@@ -727,7 +727,7 @@ class NoveltyPanel(BasePanel):
             plotbib.plot_novelty_trend(result, filename=base + "_trend", show=False)
             messagebox.showinfo("Success", f"Plots saved to:\n{base}_*.png")
         except Exception as e:
-            messagebox.showerror("Error", f"Save failed:\n{str(e)}")
+            messagebox.showerror("Error", f"Save failed:\n{e!s}")
     
     def _show_loading(self, message: str = "Processing..."):
         """Show loading indicator."""

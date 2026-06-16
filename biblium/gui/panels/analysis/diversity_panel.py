@@ -12,17 +12,15 @@ for bibliometric entities.
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import threading
-import os
-from typing import Dict, List, Optional, Tuple
+from typing import List
 
-from biblium.gui.config import FONTS, LAYOUT, get_theme
+from biblium.gui.config import FONTS
 from biblium.gui.core.events import event_bus
 from biblium.gui.panels.base import BasePanel
 from biblium.gui.widgets.cards import Card
 from biblium.gui.widgets.buttons import ThemedButton, ActionButton
 from biblium.gui.widgets.forms import LabeledCombobox, LabeledCheckbox
-from biblium.gui.widgets.tables import DataTable
-from biblium.gui.widgets.plots import add_plot_context_menu, make_canvas_resizable
+from biblium.gui.widgets.plots import add_plot_context_menu
 
 try:
     import pandas as pd
@@ -433,7 +431,6 @@ VISUALIZATION
         import matplotlib
         matplotlib.use('Agg')
         from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-        from matplotlib.figure import Figure
         from biblium.diversity import plot_diversity_radar, plot_diversity_bars
         import matplotlib.pyplot as plt
         

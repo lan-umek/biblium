@@ -19,9 +19,8 @@ Features:
 
 import pandas as pd
 import numpy as np
-from typing import Optional, Dict, List, Tuple, Union, Literal
-from dataclasses import dataclass, field
-import warnings
+from typing import Optional, Dict, List, Tuple, Union
+from dataclasses import dataclass
 
 try:
     import matplotlib.pyplot as plt
@@ -242,7 +241,7 @@ def compute_gini_index(counts: np.ndarray) -> float:
     
     # Gini coefficient formula
     cumsum = np.cumsum(sorted_counts)
-    gini = (2 * np.sum((np.arange(1, n + 1) * sorted_counts))) / (n * total) - (n + 1) / n
+    gini = (2 * np.sum(np.arange(1, n + 1) * sorted_counts)) / (n * total) - (n + 1) / n
     
     return float(max(0, min(1, gini)))  # Clamp to [0, 1]
 

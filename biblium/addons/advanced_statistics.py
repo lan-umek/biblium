@@ -27,34 +27,20 @@ Created for integration with the Biblium bibliometric toolkit.
 from __future__ import annotations
 
 import os
-import warnings
 from collections import Counter, defaultdict
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple, Union
-from itertools import combinations
-import json
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
 from scipy import stats
-from scipy.optimize import curve_fit, minimize
-from scipy.special import zeta
+from scipy.optimize import curve_fit
 from scipy.stats import (
-    pearsonr, spearmanr, kendalltau,
-    ttest_ind, ttest_rel, mannwhitneyu, wilcoxon,
-    chi2_contingency, fisher_exact,
-    kruskal, f_oneway,
-    kstest, shapiro, normaltest,
-    linregress, powerlaw)
+    linregress)
 
-from sklearn.linear_model import LinearRegression, Ridge
-from sklearn.preprocessing import PolynomialFeatures
-from sklearn.metrics import r2_score, mean_squared_error
 
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
 from matplotlib.ticker import MaxNLocator
-import seaborn as sns
 
 # Import core biblium bridge
 try:
@@ -866,10 +852,7 @@ def fit_growth_model(
     parameters = dict(zip(param_names.get(model_type, ["p" + str(i) for i in range(len(popt))]), popt))
     
     # Growth rate and doubling time
-    if model_type == "exponential":
-        growth_rate = popt[1]
-        doubling_time = np.log(2) / growth_rate if growth_rate > 0 else None
-    elif model_type == "logistic":
+    if model_type == "exponential" or model_type == "logistic":
         growth_rate = popt[1]
         doubling_time = np.log(2) / growth_rate if growth_rate > 0 else None
     elif model_type == "linear":
@@ -2172,7 +2155,6 @@ def plot_lotka_law(
     """Plot Lotka's Law analysis."""
     fig, ax = plt.subplots(figsize=figsize)
     ax.grid(False)
-    ax.grid(False)
     
     df = result.observed_distribution
     
@@ -2219,7 +2201,6 @@ def plot_bradford_law(
     """Plot Bradford's Law analysis."""
     fig, ax = plt.subplots(figsize=figsize)
     ax.grid(False)
-    ax.grid(False)
     
     df = result.source_ranking
     
@@ -2263,7 +2244,6 @@ def plot_growth_model(
     """Plot growth model results."""
     fig, ax = plt.subplots(figsize=figsize)
     ax.grid(False)
-    ax.grid(False)
     
     df = result.prediction
     historical = df[~df["is_forecast"]]
@@ -2306,7 +2286,6 @@ def plot_citation_distribution(
     cmap: str = None) -> plt.Figure:
     """Plot citation distribution analysis."""
     fig, ax = plt.subplots(figsize=figsize)
-    ax.grid(False)
     ax.grid(False)
     
     stats_dict = result.summary_stats
@@ -2359,7 +2338,6 @@ def plot_collaboration_metrics(
     dpi: int = 600) -> plt.Figure:
     """Plot collaboration analysis."""
     fig, ax = plt.subplots(figsize=figsize)
-    ax.grid(False)
     ax.grid(False)
     
     # Author distribution

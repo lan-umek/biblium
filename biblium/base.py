@@ -27,6 +27,7 @@ SEPARATOR_MAP = {
     "pubmed": "; ",
     "dimensions": "; ",
     "lens": "; ",
+    "cobiss": "; ",  # COBISS personal bibliographies (Slovenia)
     # Engineering/CS
     "ieee": "; ",
     "dblp": "; ",

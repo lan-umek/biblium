@@ -210,7 +210,7 @@ class Plot:
         Figure object
         """
         return _current_backend.line(data, x, y, config, **kwargs)
-    
+
     @staticmethod
     def scatter(
         data: pd.DataFrame,

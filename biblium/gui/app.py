@@ -10,16 +10,10 @@ Main application window and entry point.
 
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
-import os
-import sys
-import threading
-import traceback
 from typing import Optional
 
 from biblium.gui.config import (
-    LAYOUT, FONTS, get_theme, 
-    DATABASE_OPTIONS, PREPROCESS_LEVELS, SHORTCUTS,
-    AppState,
+    LAYOUT, FONTS, get_theme,
 )
 from biblium.gui.core.events import event_bus, EventBus
 from biblium.gui.core.state import StateManager
@@ -30,7 +24,6 @@ from biblium.gui.components.statusbar import StatusBar
 from biblium.gui.components.workspace import Workspace
 
 # Import panels
-from biblium.gui.panels.base import BasePanel
 
 # Try to import biblium
 try:
@@ -460,7 +453,6 @@ class BibliumApp(tk.Tk):
         self.workspace.register_panel("historiograph", HistoriographPanel)
         
         # Mapping panels
-        from biblium.gui.panels.mapping import ThematicMapPanel
         from biblium.gui.panels.analysis.topic_modeling_panel import TopicModelingPanel
         from biblium.gui.panels.analysis.dynamic_topics_panel import DynamicTopicsPanel
         

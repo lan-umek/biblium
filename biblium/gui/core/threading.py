@@ -8,9 +8,7 @@ Background task management with progress reporting and cancellation.
 from typing import Any, Callable, Dict, Optional
 from dataclasses import dataclass
 import threading
-import queue
 import traceback
-from concurrent.futures import ThreadPoolExecutor, Future
 import time
 
 

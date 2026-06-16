@@ -20,12 +20,15 @@ Enhanced with:
 import os
 import sys
 import warnings
-from typing import Optional, List, Dict, Any, Callable, Tuple, Union
+from typing import TYPE_CHECKING, Optional, List, Dict, Any, Callable, Tuple, Union
 from biblium.bibstats import BiblioStats
 from biblium.bibplot import BiblioPlot, BiblioGroupPlot
 from biblium.bibgroup import BiblioGroup
 from biblium.bibclass import BiblioGroupClassifier
 from biblium import reportbib
+
+if TYPE_CHECKING:
+    from biblium.addons.advanced_statistics import LifeCycleResult  # noqa: F401
 
 # Import enhancements
 from biblium.enhancements import (

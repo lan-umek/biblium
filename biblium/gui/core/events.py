@@ -6,9 +6,8 @@ Central event system for decoupled component communication.
 """
 
 from typing import Any, Callable, Dict, List, Optional
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import weakref
-from functools import wraps
 
 
 @dataclass

@@ -12,9 +12,8 @@ This module contains:
 from __future__ import annotations
 
 from functools import reduce
-from typing import Dict, List, Optional, Tuple, Union, Callable, Any
+from typing import Dict, List, Optional, Tuple, Callable, Any
 import pandas as pd
-import numpy as np
 
 
 def generate_group_matrix(

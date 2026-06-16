@@ -13,9 +13,9 @@ from tkinter import ttk, messagebox, filedialog
 import threading
 import os
 import tempfile
-from typing import Dict, Optional, List
+from typing import Dict
 
-from biblium.gui.config import FONTS, LAYOUT, get_theme
+from biblium.gui.config import FONTS
 from biblium.gui.core.events import event_bus, EventBus
 from biblium.gui.panels.base import BasePanel
 from biblium.gui.widgets.cards import Card, CollapsibleCard, StatsCard, CardGrid
@@ -563,7 +563,7 @@ class GeographicPanel(BasePanel):
         except Exception as e:
             tk.Label(
                 self.results_tab, 
-                text=f"⚠️ Could not display map: {str(e)}",
+                text=f"⚠️ Could not display map: {e!s}",
                 font=FONTS.get_font("small"), bg=self.theme["bg_card"],
                 fg=self.theme["warning"],
             ).pack(pady=8)
@@ -617,7 +617,7 @@ class GeographicPanel(BasePanel):
                     messagebox.showwarning("Not Found", f"File format not available. Try HTML or PNG.")
             
         except Exception as e:
-            messagebox.showerror("Error", f"Save failed:\n{str(e)}")
+            messagebox.showerror("Error", f"Save failed:\n{e!s}")
     
     def _export_data(self, df: pd.DataFrame):
         """Export data to Excel."""
@@ -642,7 +642,7 @@ class GeographicPanel(BasePanel):
             
             messagebox.showinfo("Success", f"Data exported to:\n{filepath}")
         except Exception as e:
-            messagebox.showerror("Error", f"Export failed:\n{str(e)}")
+            messagebox.showerror("Error", f"Export failed:\n{e!s}")
     
     def _show_loading(self, message: str = "Processing..."):
         """Show loading indicator."""

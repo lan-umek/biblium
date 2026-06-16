@@ -424,7 +424,7 @@ class StateManager:
         path = self._get_settings_path()
         if path.exists():
             try:
-                with open(path, "r") as f:
+                with open(path) as f:
                     data = json.load(f)
                 for key, value in data.items():
                     if hasattr(self.settings, key):
@@ -457,7 +457,7 @@ class StateManager:
         path = self._get_settings_path().parent / "ui_state.json"
         if path.exists():
             try:
-                with open(path, "r") as f:
+                with open(path) as f:
                     data = json.load(f)
                 for key, value in data.items():
                     if hasattr(self.ui, key):
