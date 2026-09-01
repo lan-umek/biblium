@@ -1,1 +1,0 @@
-sources_data_short.xlsx is a small sample of what the file should look like. Registered Scopus users can download the full dataset.

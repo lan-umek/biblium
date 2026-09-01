@@ -13978,8 +13978,13 @@ def compare_counts(
 # Tale je moj - ne uporabljaj, ker ga plačujem
 #API keys should be configured via GUI or environment variables
 
-from huggingface_hub import InferenceClient
-from huggingface_hub.utils import BadRequestError
+try:
+    from huggingface_hub import InferenceClient
+    from huggingface_hub.utils import BadRequestError
+except Exception:  # huggingface_hub is an optional (llm) dependency
+    InferenceClient = None
+    class BadRequestError(Exception):
+        pass
 
 """Comments and helpers around safe default LLM model presets for hosted or shared environments."""
 # You can still keep your MODEL_PRESETS elsewhere; these are just safe fallbacks for hosted use.

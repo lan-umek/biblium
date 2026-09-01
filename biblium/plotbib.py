@@ -8754,8 +8754,13 @@ def plot_scatter(
     plt.close(fig)
 
 
-import plotly.graph_objects as go
-from plotly.express.colors import sample_colorscale
+try:
+    import plotly.graph_objects as go
+    from plotly.express.colors import sample_colorscale
+except Exception:  # plotly is an optional (interactive) dependency
+    go = None
+    def sample_colorscale(*args, **kwargs):
+        raise ImportError("plotly is required for this plot. Install with: pip install plotly")
 
 
 def _select_top_binary(df: pd.DataFrame, n: int) -> pd.DataFrame:

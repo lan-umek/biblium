@@ -1,6 +1,6 @@
 """Biblium - Comprehensive Bibliometric Analysis Library"""
 
-__version__ = "2.16.0"
+__version__ = "2.16.1"
 
 # Global matplotlib style — no grid by default (po plot-quality memo, Lan)
 try:
