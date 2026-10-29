@@ -76,6 +76,10 @@ dependencies = [
     # Fuzzy matching
     "thefuzz>=0.20.0",
     "rapidfuzz>=3.0.0",
+
+    # COBISS / HTML parsing
+    "beautifulsoup4>=4.12.0",
+    "lxml>=4.9.0",
 ]
 
 [project.optional-dependencies]
