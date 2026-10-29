@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+  <!-- Background -->
+  <rect x="2" y="2" width="44" height="44" rx="8" fill="none" stroke="#555555" stroke-width="1.5"/>
+  <!-- Bar group 1 -->
+  <rect x="8" y="28" width="5" height="12" rx="1" fill="#555555"/>
+  <rect x="14" y="24" width="5" height="16" rx="1" fill="#777777"/>
+  <!-- Bar group 2 -->
+  <rect x="22" y="18" width="5" height="22" rx="1" fill="#555555"/>
+  <rect x="28" y="22" width="5" height="18" rx="1" fill="#777777"/>
+  <!-- Comparison arrows -->
+  <path d="M10 14 L16 14" stroke="#555555" stroke-width="1" stroke-dasharray="2,1" fill="#333333"/>
+  <path d="M24 10 L30 10" stroke="#555555" stroke-width="1" stroke-dasharray="2,1" fill="#333333"/>
+  <!-- Grid line -->
+  <line x1="6" y1="40" x2="42" y2="40" stroke="#aaaaaa" stroke-width="0.5"/>
+  <!-- Count badge -->
+  <circle cx="38" cy="12" r="6" fill="#555555"/>
+  <text x="38" y="15" text-anchor="middle" fill="#404040" font-size="8" font-weight="bold">#</text>
+</svg>

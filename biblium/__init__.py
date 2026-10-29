@@ -1,6 +1,6 @@
 """Biblium - Comprehensive Bibliometric Analysis Library"""
 
-__version__ = "2.16.1"
+__version__ = "2.19.0"
 
 # Global matplotlib style — no grid by default (po plot-quality memo, Lan)
 try:
@@ -27,6 +27,12 @@ from biblium import plotbib
 from biblium import reportbib
 from biblium.reportbib import check_report_data_availability, validate_template, generate_plots_from_template, debug_report_generation
 from biblium import sdg_identifier
+from biblium import indicators  # novo v 2.19
+# 2.19 (drugi paket): samostojni moduli, dostopni tudi brez BiblioStats
+from biblium import (  # noqa: E402
+    prisma, metadata_completion, journal_rankings, funding, reference_patterns,
+    network_dynamics, dual_map, snowball, term_extraction,
+)
 
 # Configuration system
 from biblium import config
@@ -400,7 +406,7 @@ from biblium.biblium_main import BiblioAnalysis, BiblioGroupAnalysis
 
 # Permutation inference and Firth logistic regression (new in 2.16)
 try:
-    from biblium.utilsbib_modules.permutation import (
+    from biblium.utilsbib import (
         PermutationResult,
         permutation_test,
         assoc_permutation_test,
@@ -413,7 +419,7 @@ try:
         adaptive_n_permutations,
         is_partition,
     )
-    from biblium.utilsbib_modules.firth import (
+    from biblium.utilsbib import (
         LogitResult,
         firth_logit,
         mle_logit,

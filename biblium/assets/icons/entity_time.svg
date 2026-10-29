@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="48" height="48" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background circle -->
+  <circle cx="24" cy="24" r="22" fill="none"/>
+  
+  <!-- Multiple trend lines -->
+  <path d="M8 35 L14 30 L20 32 L26 25 L32 20 L38 15" 
+        stroke="#555555" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  <path d="M8 38 L14 36 L20 34 L26 30 L32 26 L38 22" 
+        stroke="#777777" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  <path d="M8 40 L14 39 L20 38 L26 36 L32 32 L38 30" 
+        stroke="#777777" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  
+  <!-- Data points -->
+  <circle cx="38" cy="15" r="3" fill="#555555"/>
+  <circle cx="38" cy="22" r="3" fill="#777777"/>
+  <circle cx="38" cy="30" r="3" fill="#777777"/>
+  
+  <!-- Time axis indicator -->
+  <line x1="6" y1="42" x2="42" y2="42" stroke="#404040" stroke-width="2" stroke-linecap="round"/>
+  <polygon points="42,42 38,40 38,44" fill="#404040"/>
+</svg>

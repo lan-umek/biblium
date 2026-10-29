@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "biblium"
-version = "2.16.1"
+version = "2.19.0"
 description = "Comprehensive Python library for bibliometric analysis of scientific literature"
 readme = "README.md"
 license = {text = "MIT"}
@@ -24,10 +24,11 @@ keywords = [
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
+    "Environment :: X11 Applications",
+    "Operating System :: OS Independent",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -36,7 +37,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Information Analysis",
     "Topic :: Text Processing :: General",
 ]
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
     # Core
     "pandas>=1.5.0",
@@ -151,4 +152,26 @@ biblium = [
     "data/*.csv",
     "data/*.txt",
     "data/*.xlsx",
+    "assets/*.svg",
+    "tests/fixtures/*",
+    "tests/README.md",
 ]
+[tool.pytest.ini_options]
+testpaths = ["biblium/tests"]
+python_files = ["test_*.py"]
+addopts = ["-ra", "--strict-markers", "--import-mode=importlib"]
+markers = [
+    "slow: tests that take more than ~1 second to run",
+    "network: tests that hit live HTTP endpoints (none currently in the suite)",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning:statsmodels",
+    "ignore::pandas.errors.PerformanceWarning",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["F821", "B006", "B904"]

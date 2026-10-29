@@ -3112,7 +3112,7 @@ def plot_box_and_violin_by_groups(
 
 def plot_group_distributions_aligned(df, numerical_cols, group_matrix, bins=30, alpha=0.7, 
                                      save=False, filename_prefix="group_dist", dpi=600, 
-                                     show_grid=False, group_colors={}):
+                                     show_grid=False, group_colors=None):
     """
     Plot histograms of numerical variables for each group defined in a binary matrix,
     with one subplot per group, aligned on a shared x-axis.
@@ -3129,6 +3129,8 @@ def plot_group_distributions_aligned(df, numerical_cols, group_matrix, bins=30, 
     show_grid (bool): Whether to show gridlines (default: False).
     group_colors (dict): Optional dict mapping group names to colors (default: {}).
     """
+    if group_colors is None:
+        group_colors = {}
     default_color = "skyblue"
 
     for col in numerical_cols:
@@ -3328,7 +3330,7 @@ def plot_group_upset(group_matrix: pd.DataFrame, title: str = None, filename: st
 
 
 def plot_group_heatmap(group_matrix: pd.DataFrame,
-                       methods: list = ["jaccard"],
+                       methods: list = None,
                        title: str = None,
                        filename: str = "group_heatmap",
                        dpi: int = 600,
@@ -3365,19 +3367,29 @@ def plot_group_heatmap(group_matrix: pd.DataFrame,
     - **kwargs:
         Passed through to plot_heatmap, e.g. cmap, label_fontsize, wrap_width, symmetric_option, etc.
     """
+    if methods is None:
+        methods = ["jaccard"]
+    mask_diagonal = kwargs.pop("mask_diagonal", True)
     matrices = utilsbib.compute_group_similarity_matrices(group_matrix, methods)
     labels = {
         "jaccard": "Jaccard Index",
         "count": "Shared Items",
+        "lift": "Lift (obs/exp)",
         "sokal-michener": "Sokal-Michener",
         "simple-matching": "Simple Matching",
         "rogers-tanimoto": "Rogers-Tanimoto"
     }
 
     for method, mat in matrices.items():
-        normalized = method != "count"
+        normalized = method not in ("count", "lift")
         cbar_label = labels[method]
         fname = f"{filename}_{method}"
+
+        # 2.18: diagonala (samopodobnost) je trivialno maksimalna in požre
+        # barvno skalo — privzeto jo maskiramo (mask_diagonal=False izklopi).
+        if mask_diagonal:
+            mat = mat.copy()
+            np.fill_diagonal(mat.to_numpy(), np.nan)
 
         plot_heatmap(df=mat,
                      filename=fname,
@@ -3851,13 +3863,21 @@ def plot_top_items_by_group(df: pd.DataFrame,
 
     fig, ax = plt.subplots(figsize=(10, 0.4 * len(plot_df) + 1))
 
-    # Assign default group colors if none provided
+    # Assign default group colors; fill any missing groups so map() never yields NaN
+    unique_groups = plot_df["Group"].unique()
     if group_color is None:
+        group_color = {}
+    if not isinstance(group_color, dict):
+        group_color = {}
+    missing_groups = [g for g in unique_groups if g not in group_color]
+    if missing_groups:
         palette = itertools.cycle(cm.tab10.colors)
-        unique_groups = plot_df["Group"].unique()
-        group_color = {group: next(palette) for group in unique_groups}
+        for g in missing_groups:
+            group_color[g] = next(palette)
 
-    colors = plot_df["Group"].map(group_color)
+    colors = plot_df["Group"].map(group_color).tolist()
+    # Final safety: any leftover None → grey
+    colors = [c if c is not None else (0.6, 0.6, 0.6, 1.0) for c in colors]
 
     counts = Counter(plot_df["Item"])
     labels = []
@@ -5375,7 +5395,7 @@ def plot_topic_wordclouds(
     try:
         from wordcloud import WordCloud
     except ImportError:
-        raise ImportError("Install wordcloud: pip install wordcloud")
+        raise ImportError("Install wordcloud: pip install wordcloud") from None
     
     # Handle column name variations
     term_col = "Term" if "Term" in topics_df.columns else "Word"
@@ -5479,7 +5499,7 @@ def plot_comparative_topic_wordclouds(
     try:
         from wordcloud import WordCloud
     except ImportError:
-        raise ImportError("Install wordcloud: pip install wordcloud")
+        raise ImportError("Install wordcloud: pip install wordcloud") from None
     
     from matplotlib.patches import Patch
     
@@ -8754,11 +8774,12 @@ def plot_scatter(
     plt.close(fig)
 
 
-try:
+try:  # 2.16.1: plotly is an optional (interactive) dependency
     import plotly.graph_objects as go
     from plotly.express.colors import sample_colorscale
-except Exception:  # plotly is an optional (interactive) dependency
+except Exception:
     go = None
+
     def sample_colorscale(*args, **kwargs):
         raise ImportError("plotly is required for this plot. Install with: pip install plotly")
 
@@ -13126,4 +13147,34 @@ def plot_novelty_scatter(
         plt.show()
     plt.close()
     
+    return fig
+
+
+def plot_rpys(
+    rpys_df,
+    title="Reference Publication Year Spectroscopy",
+    save_path=None,
+    figsize=(12, 6),
+    fontsize=12,
+    bar_color="#c7c7c7",
+    line_color="firebrick",
+):
+    """
+    Nariše RPYS: stolpci = število citiranih referenc po letu objave reference,
+    črta = odklon od drseče mediane (vrhovi označujejo vplivna zgodovinska dela).
+    Pričakuje izhod utilsbib.compute_rpys (stolpci Cited Year, Citations, Deviation).
+    """
+    fig, ax = plt.subplots(figsize=figsize)
+    ax.bar(rpys_df["Cited Year"], rpys_df["Citations"], color=bar_color,
+           label="Cited references", width=0.8)
+    ax.plot(rpys_df["Cited Year"], rpys_df["Deviation"], color=line_color,
+            lw=1.8, label="Deviation from 5-year median")
+    ax.axhline(0, color="black", lw=0.6)
+    ax.set_xlabel("Reference publication year", fontsize=fontsize)
+    ax.set_ylabel("Number of cited references", fontsize=fontsize)
+    ax.set_title(title, fontsize=fontsize + 2)
+    ax.legend(fontsize=fontsize - 2, frameon=False)
+    fig.tight_layout()
+    if save_path:
+        fig.savefig(save_path, dpi=300, bbox_inches="tight")
     return fig

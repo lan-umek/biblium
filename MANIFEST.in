@@ -1,0 +1,7 @@
+include README.md LICENSE CHANGELOG.md
+recursive-include biblium/additional\ files *.xlsx *.txt
+recursive-include biblium/additional\ files/icons *
+recursive-include biblium/data *.csv *.txt *.xlsx
+recursive-include biblium/assets *.svg
+recursive-include biblium/tests/fixtures *
+global-exclude __pycache__ *.py[cod] .pytest_cache .ruff_cache

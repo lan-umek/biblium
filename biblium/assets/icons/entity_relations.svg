@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+  <rect width="48" height="48" rx="8" fill="none"/>
+  <!-- Row entities (left side - blue circles) -->
+  <circle cx="10" cy="12" r="4" fill="#555555"/>
+  <circle cx="10" cy="24" r="4" fill="#555555"/>
+  <circle cx="10" cy="36" r="4" fill="#555555"/>
+  <!-- Column entities (right side - green squares) -->
+  <rect x="34" y="8" width="8" height="8" rx="1.5" fill="#555555"/>
+  <rect x="34" y="20" width="8" height="8" rx="1.5" fill="#555555"/>
+  <rect x="34" y="32" width="8" height="8" rx="1.5" fill="#555555"/>
+  <!-- Connections with varying thickness = strength -->
+  <line x1="14" y1="12" x2="34" y2="12" stroke="#555555" stroke-width="3"/>
+  <line x1="14" y1="12" x2="34" y2="24" stroke="#555555" stroke-width="1.5" opacity="0.4"/>
+  <line x1="14" y1="24" x2="34" y2="12" stroke="#555555" stroke-width="1" opacity="0.3"/>
+  <line x1="14" y1="24" x2="34" y2="24" stroke="#555555" stroke-width="2.5"/>
+  <line x1="14" y1="24" x2="34" y2="36" stroke="#555555" stroke-width="2"/>
+  <line x1="14" y1="36" x2="34" y2="24" stroke="#555555" stroke-width="1.5" opacity="0.4"/>
+  <line x1="14" y1="36" x2="34" y2="36" stroke="#555555" stroke-width="2.5"/>
+  <!-- Labels -->
+  <text x="10" y="46" font-size="5" fill="#555555" text-anchor="middle">Row</text>
+  <text x="38" y="46" font-size="5" fill="#555555" text-anchor="middle">Col</text>
+</svg>

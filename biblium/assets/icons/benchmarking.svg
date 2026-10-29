@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="48" height="48" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background circle -->
+  <circle cx="24" cy="24" r="22" fill="none"/>
+  
+  <!-- Comparison bars - left (dataset) -->
+  <rect x="10" y="12" width="8" height="24" rx="1" fill="#404040"/>
+  
+  <!-- Comparison bars - right (reference) -->
+  <rect x="30" y="16" width="8" height="20" rx="1" fill="#aaaaaa"/>
+  
+  <!-- Comparison arrows -->
+  <path d="M20 24 L28 24" stroke="#404040" stroke-width="2" fill="none"/>
+  <path d="M26 21 L28 24 L26 27" stroke="#404040" stroke-width="2" fill="none"/>
+  
+  <!-- Delta indicator -->
+  <circle cx="38" cy="12" r="6" fill="#777777"/>
+  <text x="38" y="15" font-family="Arial" font-size="8" fill="#404040" text-anchor="middle" font-weight="bold">Δ</text>
+</svg>

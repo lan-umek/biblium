@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="48" height="48" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background circle -->
+  <circle cx="24" cy="24" r="22" fill="none"/>
+  
+  <!-- Bar chart representing counts -->
+  <rect x="10" y="28" width="6" height="12" rx="1" fill="#404040"/>
+  <rect x="18" y="22" width="6" height="18" rx="1" fill="#404040"/>
+  <rect x="26" y="16" width="6" height="24" rx="1" fill="#404040"/>
+  <rect x="34" y="10" width="6" height="30" rx="1" fill="#404040"/>
+  
+  <!-- Number indicator -->
+  <circle cx="38" cy="12" r="6" fill="#777777"/>
+  <text x="38" y="15" font-family="Arial" font-size="8" fill="#404040" text-anchor="middle" font-weight="bold">#</text>
+</svg>

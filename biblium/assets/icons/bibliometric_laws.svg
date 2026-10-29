@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="48" height="48" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background circle -->
+  <circle cx="24" cy="24" r="22" fill="none"/>
+  
+  <!-- Distribution curve (power law) -->
+  <path d="M10 38 Q12 20 16 16 Q20 12 28 11 Q36 10 40 10" 
+        stroke="#404040" stroke-width="3" fill="none" stroke-linecap="round"/>
+  
+  <!-- Data points -->
+  <circle cx="12" cy="32" r="2.5" fill="#aaaaaa"/>
+  <circle cx="16" cy="20" r="2.5" fill="#aaaaaa"/>
+  <circle cx="22" cy="14" r="2.5" fill="#aaaaaa"/>
+  <circle cx="30" cy="12" r="2.5" fill="#aaaaaa"/>
+  <circle cx="38" cy="11" r="2.5" fill="#aaaaaa"/>
+  
+  <!-- Axes -->
+  <line x1="8" y1="40" x2="42" y2="40" stroke="#404040" stroke-width="2" stroke-linecap="round"/>
+  <line x1="8" y1="40" x2="8" y2="8" stroke="#404040" stroke-width="2" stroke-linecap="round"/>
+</svg>

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="48" height="48" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background circle -->
+  <circle cx="24" cy="24" r="22" fill="none"/>
+  
+  <!-- H-index representation -->
+  <text x="24" y="20" font-family="Arial" font-size="14" fill="#404040" text-anchor="middle" font-weight="bold">H</text>
+  
+  <!-- Statistics chart -->
+  <rect x="10" y="26" width="5" height="14" rx="1" fill="#404040"/>
+  <rect x="17" y="30" width="5" height="10" rx="1" fill="#404040"/>
+  <rect x="24" y="32" width="5" height="8" rx="1" fill="#404040"/>
+  <rect x="31" y="34" width="5" height="6" rx="1" fill="#404040"/>
+  
+  <!-- Index indicator -->
+  <circle cx="38" cy="12" r="6" fill="#555555"/>
+  <text x="38" y="15" font-family="Arial" font-size="7" fill="#404040" text-anchor="middle" font-weight="bold">idx</text>
+</svg>

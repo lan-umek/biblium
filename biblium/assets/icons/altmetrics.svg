@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="48" height="48" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background circle -->
+  <circle cx="24" cy="24" r="22" fill="none"/>
+  
+  <!-- Social media icons representation -->
+  <!-- Twitter bird silhouette -->
+  <circle cx="14" cy="14" r="5" fill="#777777" stroke="#404040" stroke-width="1"/>
+  <text x="14" y="17" font-size="8" fill="#404040" text-anchor="middle">t</text>
+  
+  <!-- News icon -->
+  <circle cx="34" cy="14" r="5" fill="#333333" stroke="#404040" stroke-width="1"/>
+  <rect x="31" y="12" width="6" height="4" fill="#404040" rx="1"/>
+  
+  <!-- Mendeley-style icon -->
+  <circle cx="14" cy="34" r="5" fill="#333333" stroke="#404040" stroke-width="1"/>
+  <text x="14" y="37" font-size="8" fill="#404040" text-anchor="middle">M</text>
+  
+  <!-- Policy icon -->
+  <circle cx="34" cy="34" r="5" fill="#555555" stroke="#404040" stroke-width="1"/>
+  <rect x="32" y="31" width="4" height="6" fill="#404040"/>
+  <polygon points="34,30 32,32 36,32" fill="#404040"/>
+  
+  <!-- Central attention score -->
+  <circle cx="24" cy="24" r="8" fill="#aaaaaa" stroke="#404040" stroke-width="2"/>
+  <text x="24" y="28" font-size="10" fill="#333333" text-anchor="middle" font-weight="bold">A</text>
+  
+  <!-- Connection lines -->
+  <line x1="18" y1="18" x2="20" y2="20" stroke="#404040" stroke-width="1.5"/>
+  <line x1="30" y1="18" x2="28" y2="20" stroke="#404040" stroke-width="1.5"/>
+  <line x1="18" y1="30" x2="20" y2="28" stroke="#404040" stroke-width="1.5"/>
+  <line x1="30" y1="30" x2="28" y2="28" stroke="#404040" stroke-width="1.5"/>
+</svg>

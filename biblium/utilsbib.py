@@ -336,15 +336,109 @@ class _DeferredImports:
     @classmethod
     def load_nltk(cls):
         if cls._WordNetLemmatizer is None:
-            import nltk
-            from nltk.stem import WordNetLemmatizer
-            from nltk.tokenize import word_tokenize
-            from nltk.corpus import stopwords
-            from nltk.sentiment import SentimentIntensityAnalyzer
-            cls._WordNetLemmatizer = WordNetLemmatizer
-            cls._word_tokenize = word_tokenize
-            cls._stopwords = stopwords
-            cls._SentimentIntensityAnalyzer = SentimentIntensityAnalyzer
+            try:
+                import nltk
+                from nltk.stem import WordNetLemmatizer
+                from nltk.tokenize import word_tokenize
+                from nltk.corpus import stopwords
+                from nltk.sentiment import SentimentIntensityAnalyzer
+                # Functional smoke test: nltk may be installed while its data
+                # (wordnet/punkt/stopwords) is missing and cannot be
+                # downloaded; in that case calls fail at runtime, so fall back
+                # now (fix 2026-08-06, app 003_DEA).
+                _ensure_nltk()
+                WordNetLemmatizer().lemmatize("tests")
+                word_tokenize("smoke test")
+                stopwords.words("english")
+                cls._WordNetLemmatizer = WordNetLemmatizer
+                cls._word_tokenize = word_tokenize
+                cls._stopwords = stopwords
+                cls._SentimentIntensityAnalyzer = SentimentIntensityAnalyzer
+            except Exception:
+                # Graceful degradation when NLTK is unavailable
+                # (fix 2026-08-06, app 003_DEA): regex tokenizer, no lemmatization,
+                # minimal built-in English stopword list.
+                import warnings
+                import re as _re
+                warnings.warn(
+                    "NLTK ni nameščen — biblium uporablja poenostavljeno "
+                    "tokenizacijo brez lematizacije. Za polno obdelavo besedil "
+                    "namesti nltk (pip install nltk).",
+                    RuntimeWarning,
+                )
+
+                class _NoLemmaLemmatizer:
+                    """Rule-based English plural/inflection stripper.
+
+                    Approximates WordNet lemmatization well enough for
+                    bibliometric term counting (plural merging).
+                    """
+
+                    _irregular = {
+                        "analyses": "analysis", "hypotheses": "hypothesis",
+                        "indices": "index", "matrices": "matrix",
+                        "criteria": "criterion", "phenomena": "phenomenon",
+                        "data": "data", "media": "media", "children": "child",
+                        "men": "man", "women": "woman", "feet": "foot",
+                        "theses": "thesis", "axes": "axis", "crises": "crisis",
+                        "efficiencies": "efficiency", "studies": "study",
+                        "countries": "country", "industries": "industry",
+                        "universities": "university", "technologies": "technology",
+                    }
+                    _keep_s = {
+                        "bias", "gas", "basis", "analysis", "thesis", "axis",
+                        "crisis", "series", "species", "news", "physics",
+                        "economics", "statistics", "mathematics", "logistics",
+                        "always", "perhaps",
+                    }
+
+                    def lemmatize(self, word, pos="n"):
+                        w = str(word)
+                        lw = w.lower()
+                        if lw in self._irregular:
+                            return self._irregular[lw]
+                        if lw in self._keep_s or len(lw) < 4 or not lw.endswith("s"):
+                            return w
+                        if lw.endswith("ies") and len(lw) > 4:
+                            return w[:-3] + "y"
+                        if lw.endswith(("ses", "xes", "zes", "ches", "shes")):
+                            return w[:-2]
+                        if lw.endswith("ss") or lw.endswith("us") or lw.endswith("is"):
+                            return w
+                        return w[:-1]
+
+                _token_re = _re.compile(r"[A-Za-z0-9][A-Za-z0-9\-']*")
+
+                def _simple_word_tokenize(text, *args, **kwargs):
+                    return _token_re.findall(str(text))
+
+                class _FallbackStopwords:
+                    _english = {
+                        "a", "an", "the", "and", "or", "but", "if", "then",
+                        "of", "in", "on", "at", "to", "for", "from", "by",
+                        "with", "without", "as", "is", "are", "was", "were",
+                        "be", "been", "being", "it", "its", "this", "that",
+                        "these", "those", "which", "who", "whom", "whose",
+                        "we", "our", "us", "they", "their", "them", "he",
+                        "she", "his", "her", "you", "your", "i", "not", "no",
+                        "nor", "so", "than", "too", "very", "can", "could",
+                        "will", "would", "shall", "should", "may", "might",
+                        "must", "do", "does", "did", "done", "have", "has",
+                        "had", "such", "each", "both", "more", "most", "some",
+                        "any", "all", "also", "into", "over", "under",
+                        "between", "among", "through", "during", "while",
+                        "there", "here", "when", "where", "how", "what",
+                        "other", "own", "same", "only", "further", "however",
+                        "thus", "therefore",
+                    }
+
+                    def words(self, lang="english"):
+                        return sorted(self._english)
+
+                cls._WordNetLemmatizer = _NoLemmaLemmatizer
+                cls._word_tokenize = staticmethod(_simple_word_tokenize)
+                cls._stopwords = _FallbackStopwords()
+                cls._SentimentIntensityAnalyzer = None
     
     @classmethod
     def load_rapidfuzz(cls):
@@ -560,6 +654,74 @@ def get_stopwords():
     """Get NLTK stopwords corpus (lazy-loaded)."""
     _deferred.load_nltk()
     return _deferred._stopwords
+
+
+def get_combined_stopwords(
+    include_general=True,
+    include_specific=True,
+    specific_categories=None,
+    extra=None,
+    include_sklearn_english=True,
+):
+    """
+    Return a combined stopword list suitable for topic modeling (LDA/DTM/NMF).
+
+    Merges sklearn 'english' baseline + biblium general sheet (~1160) +
+    biblium specific sheet (categorized: Scholarly boilerplate, Methods,
+    Publisher boilerplate, Discourse markers, ...) + optional user extras.
+
+    (2.18: prenesena iz nekdanjega ``utilsbib_modules/text.py``, ki je bil
+    ob konsolidaciji odstranjen.)
+    """
+    import pandas as pd
+    from pathlib import Path
+
+    sw = set()
+
+    if include_sklearn_english:
+        try:
+            from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
+            sw.update(w.lower() for w in ENGLISH_STOP_WORDS)
+        except Exception:
+            pass
+
+    bib_dir = Path(__file__).resolve().parent
+    sw_file = bib_dir / "additional files" / "stopwords.xlsx"
+    if not sw_file.is_file():
+        sw_file = bib_dir.parent / "additional files" / "stopwords.xlsx"
+
+    if sw_file.is_file():
+        try:
+            if include_general:
+                gen = pd.read_excel(sw_file, sheet_name="general")
+                col = gen.columns[0]
+                for w in gen[col].dropna():
+                    w = str(w).lower().strip()
+                    if w:
+                        sw.add(w)
+            if include_specific:
+                sp = pd.read_excel(sw_file, sheet_name="specific")
+                if specific_categories:
+                    sp = sp[sp["Category"].isin(specific_categories)]
+                for w in sp["Word"].dropna():
+                    w = str(w).lower().strip()
+                    if w:
+                        sw.add(w)
+        except Exception as e:
+            import warnings
+            warnings.warn(
+                "Cannot read biblium stopwords.xlsx: " + str(e),
+                stacklevel=2,
+            )
+
+    if extra:
+        for w in extra:
+            w = str(w).lower().strip()
+            if w:
+                sw.add(w)
+
+    return sorted(sw)
+
 
 # For networkx, create a module-like accessor
 class _NetworkXModule:
@@ -1266,7 +1428,7 @@ def check_missing_values(
 
 def filter_dataframe(
     df: pd.DataFrame,
-    filters: dict = {},
+    filters: dict = None,
     bradford_filter: str = 'all',
 ) -> pd.DataFrame:
     """
@@ -1299,6 +1461,8 @@ def filter_dataframe(
     ... }
     >>> filtered_df = filter_dataframe(df, filters, bradford_filter="core")
     """
+    if filters is None:
+        filters = {}
     mask = pd.Series(True, index=df.index)
 
     for col, criteria in filters.items():
@@ -1543,7 +1707,7 @@ def collaboration_index(
         Returns 0.0 if there are no multi-authored articles.
     """
     # Parse the author strings into lists
-    parsed = df[author_col].astype(str).map(lambda s: [a.strip() for a in s.split(sep) if a.strip()])
+    parsed = df[author_col].fillna("").astype(str).map(lambda s: [a.strip() for a in s.split(sep) if a.strip()])
 
     # Filter to multi-authored articles
     multi = parsed[parsed.map(len) > 1]
@@ -1796,33 +1960,40 @@ def _get_eu_countries():
     return _eu_countries
 
 
-# For direct module-level access (backward compatibility)
-# Import from utilsbib_modules.countries which loads data at module import time
+# Country reference data (integrated from utilsbib_modules.countries in 2.18)
 try:
-    from biblium.utilsbib_modules.countries import (
-        df_countries,
-        domain_dct,
-        c_off_dct,
-        code_dct,
-        code_dct_r,
-        country_iso3_dct,
-        continent_dct,
-        code_to_coords,
-        l_countries,
-        eu_countries,
-    )
-except ImportError:
-    # Fallback - use lazy loading
-    df_countries = None
-    domain_dct = None
-    c_off_dct = None
-    code_dct = None
-    code_dct_r = None
-    country_iso3_dct = None
-    continent_dct = None
-    code_to_coords = None
-    l_countries = None
-    eu_countries = None
+    # =============================================================================
+    # LOAD COUNTRY DATA
+    # =============================================================================
+
+    _fd = os.path.dirname(__file__)  # biblium package directory
+    _countries_path = os.path.join(_fd, "additional files", "countries.xlsx")
+
+    # Load country reference data
+    df_countries = pd.read_excel(_countries_path)
+
+    # Build lookup dictionaries
+    domain_dct = df_countries.set_index("Internet domain").to_dict()["Name"]
+    c_off_dct = df_countries.set_index("Official name").to_dict()["Name"]
+    code_dct = df_countries.set_index("Name").to_dict()["Code"]
+    code_dct_r = df_countries.set_index("Code").to_dict()["Name"]
+    country_iso3_dct = df_countries.set_index("Name").to_dict()["ISO-3"]
+    continent_dct = df_countries.set_index("Name").to_dict()["Continent"]
+
+    # Coordinate lookup
+    df_countries_un_iso = df_countries.drop_duplicates(subset="ISO-3")
+    code_to_coords = df_countries_un_iso[["ISO-3", "latitude", "longitude"]].set_index("ISO-3")[["latitude", "longitude"]].to_dict(orient="index")
+
+    # Country lists
+    l_countries = list(df_countries["Name"])
+    eu_countries = list(df_countries[df_countries["EU"] == 1]["Name"])
+
+
+except Exception:
+    df_countries = None; domain_dct = None; c_off_dct = None; code_dct = None
+    code_dct_r = None; country_iso3_dct = None; continent_dct = None
+    code_to_coords = None; l_countries = None; eu_countries = None
+
 
 def correct_country_name(
     s,
@@ -2428,34 +2599,8 @@ def openalex_extract_affiliations(
 
 """Helpers for working with URL and link fields, including normalization, extraction and simple validation."""
 # links
-
-def build_links_from_matrix(
-    matrix_df,
-    min_weight = 1,
-):
-    """
-    Constructs a DataFrame of collaboration links from a symmetric matrix.
-
-    Parameters:
-    matrix_df (pd.DataFrame): Symmetric collaboration matrix.
-    min_weight (int): Minimum weight to include a link (default = 1).
-
-    Returns:
-    pd.DataFrame: DataFrame with columns: "source", "target", "weight".
-    """
-    if matrix_df.empty:
-        return pd.DataFrame(columns=["source", "target", "weight"])
-
-    links = []
-    for i, source in enumerate(matrix_df.index):
-        for j, target in enumerate(matrix_df.columns):
-            if j <= i:
-                continue  # Only upper triangle to avoid duplicates
-            weight = matrix_df.iloc[i, j]
-            if weight >= min_weight:
-                links.append((source, target, weight))
-
-    return pd.DataFrame(links, columns=["source", "target", "weight"])
+# NOTE (2.18): duplicated legacy build_links_from_matrix removed — canonical
+# version (with exclude_diagonal support) is defined later in this file.
 
 """Functions for identifying and working with top-cited documents, authors or sources."""
 # top cited
@@ -4301,6 +4446,112 @@ def ensure_wordnet() -> None:
 
 import unicodedata
 
+#: Generic Scopus/Compendex/EMTREE index terms that describe document type or study
+#: subjects rather than topics (added 2.18, app 007: 'article' entered a top-45 keyword map).
+GENERIC_INDEX_TERMS: frozenset[str] = frozenset({
+    "article", "review", "human", "humans", "male", "female", "adult", "controlled study",
+    "priority journal", "major clinical study", "procedures", "questionnaire",
+    "middle aged", "aged", "young adult", "adolescent",
+    "conference paper", "note", "editorial",
+})
+
+
+def keyword_variant_key(kw: str) -> str:
+    """Return a canonical *matching key* for a keyword (not a display form).
+
+    Merges surface variants that differ only in:
+      - a trailing parenthetical acronym: "artificial intelligence (ai)" → "artificial intelligence"
+      - hyphen/space/underscore: "machine-learning" → "machine learning"
+      - regular English plural on any token: "decision support systems" → "decision support system",
+        "decisions makings" → "decision making" (Compendex plural forms)
+    Pure-Python, no NLTK required. Conservative plural rules: -ies→-y, -sses→-ss, -s→'' except
+    for tokens ending in -ss, -us, -is, -ics or of length ≤ 3.
+    """
+    s = str(kw).lower().strip()
+    s = re.sub(r"\s*\([^)]{1,12}\)\s*$", "", s)
+    s = re.sub(r"[\-‐-—−_/]+", " ", s)
+    s = re.sub(r"[^\w\s]", "", s)
+    toks = []
+    for t in s.split():
+        if len(t) > 3 and not t.endswith(("ss", "us", "is", "ics")):
+            if t.endswith("ies"):
+                t = t[:-3] + "y"
+            elif t.endswith("sses"):
+                t = t[:-2]
+            elif t.endswith("s"):
+                t = t[:-1]
+        toks.append(t)
+    return " ".join(toks)
+
+
+def harmonize_keyword_variants(
+    df: pd.DataFrame,
+    columns: list[str],
+    sep: str = ";",
+    synonyms: dict[str, str] | pd.DataFrame | None = None,
+    drop_terms: set[str] | frozenset[str] | None = GENERIC_INDEX_TERMS,
+    out_suffix: str = " (harmonized)",
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Corpus-level harmonisation of keyword variants across one or more keyword columns.
+
+    All keywords sharing the same :func:`keyword_variant_key` are mapped to the most frequent
+    surface form in the corpus (ties → shortest). An optional thesaurus (``synonyms``: dict
+    variant→canonical, or DataFrame with columns ``variant`` and ``canonical``) is applied to
+    keys afterwards, and generic index terms (``drop_terms``) are removed.
+
+    Added in biblium 2.18 after a reviewer found unmerged singular/plural, hyphen and acronym
+    duplicates plus the index term 'article' in a keyword co-occurrence map (app 007).
+
+    Returns:
+        (df_out, mapping) — ``df_out`` gets one new column per input column
+        (``<col><out_suffix>``, ``sep``-joined, de-duplicated within a cell);
+        ``mapping`` lists every original surface form with its key and canonical form.
+    """
+    if isinstance(synonyms, pd.DataFrame):
+        synonyms = {keyword_variant_key(v): keyword_variant_key(c)
+                    for v, c in zip(synonyms["variant"], synonyms["canonical"])}
+    else:
+        synonyms = {keyword_variant_key(k): keyword_variant_key(v) for k, v in (synonyms or {}).items()}
+    drop_keys = {keyword_variant_key(t) for t in (drop_terms or [])}
+
+    surface_counts: dict[str, Counter] = {}
+    for col in columns:
+        for cell in df[col].fillna(""):
+            for kw in (k.strip().lower() for k in str(cell).split(sep)):
+                if kw:
+                    key = keyword_variant_key(kw)
+                    key = synonyms.get(key, key)
+                    surface_counts.setdefault(key, Counter())[kw] += 1
+    canon = {}
+    for key, cnt in surface_counts.items():
+        best = sorted(cnt.items(), key=lambda kv: (-kv[1], len(kv[0])))[0][0]
+        canon[key] = re.sub(r"\s*\([^)]{1,12}\)\s*$", "", best).replace("-", " ")
+    rows = []
+    for key, cnt in surface_counts.items():
+        for surf, n in cnt.items():
+            rows.append({"original": surf, "key": key, "canonical": canon[key], "n": n,
+                         "dropped": key in drop_keys})
+    mapping = pd.DataFrame(rows).sort_values(["canonical", "n"], ascending=[True, False])
+
+    out = df.copy()
+    for col in columns:
+        def _h(cell):
+            seen = []
+            for kw in (k.strip().lower() for k in str(cell).split(sep)):
+                if not kw:
+                    continue
+                key = keyword_variant_key(kw)
+                key = synonyms.get(key, key)
+                if key in drop_keys:
+                    continue
+                c = canon[key]
+                if c not in seen:
+                    seen.append(c)
+            return f"{sep} ".join(seen)
+        out[col + out_suffix] = out[col].fillna("").map(_h)
+    return out, mapping
+
+
 def preprocess_keywords(
     df: pd.DataFrame,
     column: str,
@@ -4500,18 +4751,39 @@ def preprocess_keywords(
 stopwords_file = os.path.join(fd, "additional files", "stopwords.xlsx")
 
 def _ensure_nltk():
-    """Ensure required NLTK resources are available without redundant downloads."""
-    import nltk
+    """Ensure required NLTK resources are available without redundant downloads.
+
+    Returns True if NLTK (with resources) is usable, False otherwise. Missing
+    nltk or failed downloads no longer crash biblium — text processing falls
+    back to the regex tokenizer in ``_deferred.load_nltk``
+    (fix 2026-08-06, app 003_DEA).
+    """
+    try:
+        import nltk
+    except ImportError:
+        return False
     resources = [
         ("punkt", "tokenizers/punkt"),
         ("wordnet", "corpora/wordnet"),
         ("stopwords", "corpora/stopwords"),
     ]
+    ok = True
     for pkg, res in resources:
         try:
             nltk.data.find(res)
         except LookupError:
-            nltk.download(pkg, quiet=True)
+            try:
+                nltk.download(pkg, quiet=True)
+                nltk.data.find(res)
+            except Exception:
+                import warnings
+                warnings.warn(
+                    f"NLTK vir '{pkg}' ni na voljo in prenos ni uspel — "
+                    "lematizacija bo morda okrnjena.",
+                    RuntimeWarning,
+                )
+                ok = False
+    return ok
 
 def process_text_column(
     df: pd.DataFrame,
@@ -4643,8 +4915,12 @@ def process_text_column(
             # Legacy: single-sheet workbook
             base_sw = _extract_sw_from_df(sheets)
     else:
-        # Lazy-load NLTK stopwords corpus on demand (avoids hard dependency at import).
-        from nltk.corpus import stopwords as _sw_corpus
+        # Lazy-load NLTK stopwords corpus on demand (avoids hard dependency at import);
+        # falls back to the built-in list when nltk is missing (fix 2026-08-06).
+        try:
+            from nltk.corpus import stopwords as _sw_corpus
+        except ImportError:
+            _sw_corpus = get_stopwords()
         try:
             base_sw = [w.lower() for w in _sw_corpus.words(lang)]
         except OSError:
@@ -4966,6 +5242,7 @@ def add_concept_indicators(
     df: pd.DataFrame,
     concept_df: pd.DataFrame,
     text_col: str,
+    exclude_df: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """
     Add binary indicator columns to `df` for each concept defined in `concept_df`,
@@ -4973,6 +5250,11 @@ def add_concept_indicators(
       1) Token-level wildcard at the END of a token with `*` (e.g., "gov*" matches "government", "governance").
       2) Multi-word phrases that must appear in order (e.g., "collaborative governance").
       3) Combination of both (e.g., "good gov*" matches "good government"/"good governance").
+      4) Optional per-concept EXCLUSION phrases via `exclude_df` (same column names as
+         `concept_df`). Excluded phrases are removed from the text *before* matching,
+         so "disaster preparedness" can be neutralised while "AI readiness" in the
+         same document still counts. (Added in 2.18 for dictionary validation,
+         app 007_AI_readiness_local_government.)
 
     Notes
     -----
@@ -5054,8 +5336,21 @@ def add_concept_indicators(
         combined = "(?:" + "|".join(pattern_list) + ")"
         regex = re.compile(combined, flags=re.IGNORECASE)
 
+        # Optional exclusion: strip excluded phrases from text before matching
+        search_text = out[text_col]
+        if exclude_df is not None and concept in exclude_df.columns:
+            ex_phrases = [
+                p for p in exclude_df[concept].dropna().astype(str).str.strip().str.lower()
+                if p
+            ]
+            ex_patterns = [phrase_to_regex(p) for p in ex_phrases]
+            ex_patterns = [p for p in ex_patterns if p]
+            if ex_patterns:
+                ex_regex = re.compile("(?:" + "|".join(ex_patterns) + ")", flags=re.IGNORECASE)
+                search_text = search_text.str.replace(ex_regex, " ", regex=True)
+
         # Vectorized contains → 0/1
-        out[concept] = out[text_col].str.contains(regex, na=False).astype(int)
+        out[concept] = search_text.str.contains(regex, na=False).astype(int)
 
     return out
 
@@ -5812,12 +6107,28 @@ def sequential_topic_modeling(
     df_work = df_work.dropna(subset=[time_column])
     df_work[time_column] = df_work[time_column].astype(int)
     
-    # Determine time periods
+    # Determine time periods.
+    # 2.18: when `time_slices` is given it is interpreted as INTERVAL
+    # BOUNDARIES (as documented), e.g. [2000, 2006, 2013, 2020, 2026] →
+    # periods 2000-2005, 2006-2012, 2013-2019, 2020-2026 (last inclusive).
+    # Previously each boundary was treated as a single exact year, silently
+    # dropping all documents between boundaries.
+    # `period_bounds` maps period key (start year) → (start, end) inclusive.
     if time_slices is None:
-        periods = sorted(df_work[time_column].unique())
+        periods = [int(p) for p in sorted(df_work[time_column].unique())]
+        period_bounds = {p: (p, p) for p in periods}
     else:
-        periods = sorted(time_slices)
-    
+        edges = sorted(int(e) for e in set(time_slices))
+        if len(edges) < 2:
+            raise ValueError("time_slices must contain at least 2 boundaries.")
+        periods = []
+        period_bounds = {}
+        for i in range(len(edges) - 1):
+            start = edges[i]
+            end = edges[i + 1] - 1 if i < len(edges) - 2 else edges[i + 1]
+            periods.append(start)
+            period_bounds[start] = (start, end)
+
     if len(periods) < 2:
         raise ValueError("Need at least 2 time periods for sequential modeling.")
     
@@ -5870,9 +6181,10 @@ def sequential_topic_modeling(
         if progress_callback:
             progress_callback(f"Processing period {period} ({idx+1}/{len(periods)})")
         
-        period_mask = df_work[time_column] == period
+        _start, _end = period_bounds[period]
+        period_mask = df_work[time_column].between(_start, _end)
         period_df = df_work[period_mask]
-        
+
         if len(period_df) < n_topics:
             continue
         
@@ -5979,31 +6291,21 @@ def _align_topics_across_periods(
     """Align topics across time periods using cosine similarity."""
     from sklearn.metrics.pairwise import cosine_similarity
     
-    if len(periods) < 2:
+    # 2.18: align over the periods that were actually fitted — previously an
+    # unfitted FIRST period (e.g. too few documents) returned an empty frame,
+    # and any unfitted middle period broke the chain.
+    fitted = [p for p in periods if p in period_topic_terms]
+    if len(fitted) < 2:
         return pd.DataFrame()
-    
+
     evolution_rows = []
-    
-    # Use first period as reference
-    ref_period = periods[0]
-    if ref_period not in period_topic_terms:
-        return pd.DataFrame()
-    
-    ref_topics = period_topic_terms[ref_period]
-    
+
     # Track topic mapping
-    topic_mapping = {ref_period: list(range(n_topics))}
-    
-    for i, period in enumerate(periods[1:], 1):
-        if period not in period_topic_terms:
-            continue
-        
+    topic_mapping = {fitted[0]: list(range(n_topics))}
+
+    for i, period in enumerate(fitted[1:], 1):
         curr_topics = period_topic_terms[period]
-        prev_period = periods[i-1]
-        
-        if prev_period not in period_topic_terms:
-            continue
-        
+        prev_period = fitted[i - 1]
         prev_topics = period_topic_terms[prev_period]
         
         # Compute similarity matrix
@@ -6691,7 +6993,7 @@ def analyze_sentiment(
         import nltk
         from nltk.sentiment import SentimentIntensityAnalyzer
     except ImportError:
-        raise ImportError("nltk is required for sentiment analysis. Install with: pip install nltk")
+        raise ImportError("nltk is required for sentiment analysis. Install with: pip install nltk") from None
 
     # Download lexicon and initialize sentiment analyzer
     try:
@@ -6794,11 +7096,13 @@ def hg_index(citations):
     # h_index and g_index already clean the data internally
     return np.sqrt(h_index(citations) * g_index(citations))
 
-def c_index(citations, thresholds=[1, 5, 10, 20, 50, 100, 1000]):
+def c_index(citations, thresholds=None):
     """
     Compute the C-index for a set of citation thresholds.
     Returns a dictionary of counts.
     """
+    if thresholds is None:
+        thresholds = [1, 5, 10, 20, 50, 100, 1000]
     citations = np.array(_clean_list(citations))
     if len(citations) == 0:
         return {c: 0 for c in thresholds}
@@ -6807,19 +7111,24 @@ def c_index(citations, thresholds=[1, 5, 10, 20, 50, 100, 1000]):
 
 def tapered_h_index(citations):
     """
-    Compute the tapered h-index (a more nuanced variant of h-index).
+    Compute the tapered h-index (Anderson, Hankin & Killworth 2008).
+
+    Each paper at rank j (descending citations) contributes
+    c_j/(2j-1) if c_j <= j, otherwise j/(2j-1) + sum_{i=j+1}^{c_j} 1/(2i-1),
+    i.e. full credit for the completely filled Ferrers square plus tapered
+    credit for citations outside it.
     """
-    citations = _clean_list(citations)
-    h = 0.0
-    for i, cit in enumerate(sorted(citations, reverse=True)):
-        # logic adjusted to work on sorted array properly or unsorted map? 
-        # Tapered h usually requires sorting descending.
-        # Assuming original logic intended unsorted map based on paper ID? 
-        # Usually h-indexes work on ranked lists. I will sort descending to be safe.
-        k = min(i + 1, cit)
-        h += k / (2 * i + 1)
-        h += sum(1 / (2 * i + 1) for _ in range(i + 1, cit)) # fixed variable shadowing
-    return h
+    citations = sorted(_clean_list(citations), reverse=True)
+    h_t = 0.0
+    for j, c in enumerate(citations, 1):
+        c = int(c)
+        if c <= 0:
+            continue
+        if c <= j:
+            h_t += c / (2 * j - 1)
+        else:
+            h_t += j / (2 * j - 1) + sum(1.0 / (2 * i - 1) for i in range(j + 1, c + 1))
+    return h_t
 
 def chi_index(citations):
     """
@@ -6875,14 +7184,15 @@ def t_index(citations):
 
 def pi_index(citations):
     """
-    Compute the pi-index: total citations for the top √N publications.
+    Compute the pi-index (Vinkler 2009): one hundredth of the citations
+    received by the elite set, whose size equals sqrt(N) publications.
     """
     citations = sorted(_clean_list(citations), reverse=True)
     n = len(citations)
     if n == 0:
-        return 0
-    top_k = int(np.sqrt(n))
-    return sum(citations[:top_k])
+        return 0.0
+    top_k = max(1, int(np.sqrt(n)))
+    return sum(citations[:top_k]) / 100.0
 
 def gini_index(citations):
     """
@@ -7023,10 +7333,12 @@ def hg_index_df(df):
     return hg_index(_get_clean_col(df, "Cited by").tolist())
 
 
-def c_index_df(df, thresholds=[1, 5, 10, 20, 50, 100, 1000]):
+def c_index_df(df, thresholds=None):
     """
     Compute citation thresholds from a DataFrame.
     """
+    if thresholds is None:
+        thresholds = [1, 5, 10, 20, 50, 100, 1000]
     citations = _get_clean_col(df, "Cited by").tolist()
     total_docs = len(citations)
 
@@ -10045,7 +10357,12 @@ def generate_group_matrix(
     force_type: Optional[Literal["column", "multiitem", "regex", "binary", "year", "concept"]] = None,
     text_column: Optional[str] = None,
     regex_flags: int = re.IGNORECASE,
-    concept_whole_word: bool = False,
+    # 2.18 fix (2026-08-10, app 003_DEA): privzeto True. Substring
+    # ujemanje je proizvajalo sistematične false positive ("sport*" ⊂
+    # "transport", "city" ⊂ "electricity", "rice*" ⊂ "price", "sfa" ⊂
+    # "satisfaction") — na 003_DEA do 87 % lažnih zadetkov pri Sports.
+    # Za staro vedenje eksplicitno podaj concept_whole_word=False.
+    concept_whole_word: bool = True,
     sep: str = "; ",
     top_n: Optional[int] = None,
     include_items: Optional[List[str]] = None,
@@ -10787,7 +11104,7 @@ def compute_group_intersections(
 
 def compute_group_similarity_matrices(
     group_matrix: pd.DataFrame,
-    methods: list = ['jaccard'],
+    methods: list = None,
 ) -> dict:
     """
     Computes group × group similarity matrices for given methods.
@@ -10802,6 +11119,8 @@ def compute_group_similarity_matrices(
     - dict: keys are method names, values are DataFrames (group × group similarity matrices)
     """
 
+    if methods is None:
+        methods = ['jaccard']
     supported_methods = {
         "jaccard": "Jaccard Index",
         "count": "Shared Items",
@@ -10932,7 +11251,7 @@ def aggregate_bibliometrics_by_group_and_year(
     binary_df,
     group_columns = None,
     year_column = 'Year',
-    metrics = ['Cited by'],
+    metrics = None,
     additional_binary_dfs = None,
     normalize = True,
     include_cumulative = False,
@@ -10983,6 +11302,8 @@ def aggregate_bibliometrics_by_group_and_year(
         A dataframe with aggregated results by group and year or both formats.
     """
 
+    if metrics is None:
+        metrics = ['Cited by']
     all_columns = binary_df.columns
 
     if group_selection_include_regex:
@@ -11543,59 +11864,7 @@ def compute_binary_associations(
 """Utilities related to Additional normalization methods for a given symetric dataframe in the Biblium project."""
 # additional normalization methods for a given symetric dataframe
 
-def normalize_symmetric_matrix(
-    matrix_df,
-    method = 'jaccard',
-):
-    """
-    Normalizes a symmetric co-occurrence matrix using the specified method.
-
-    Supported methods:
-    - "jaccard": Jaccard similarity
-    - "cosine": Cosine similarity
-    - "row": Row-wise proportion (normalized by row sums)
-    - "none": No normalization, returns a copy
-
-    Parameters:
-    matrix_df (pd.DataFrame): Symmetric matrix (e.g. country collaboration).
-    method (str): Normalization method ("jaccard", "cosine", "row", "none").
-
-    Returns:
-    pd.DataFrame: Normalized matrix with same index and columns.
-    """
-    if matrix_df.empty:
-        return pd.DataFrame()
-
-    if method == "none":
-        return matrix_df.copy()
-
-    if method == "row":
-        row_sums = matrix_df.sum(axis=1).replace(0, 1)
-        return matrix_df.div(row_sums, axis=0)
-
-    if method == "cosine":
-        from sklearn.metrics.pairwise import cosine_similarity
-        similarity = cosine_similarity(matrix_df)
-        return pd.DataFrame(similarity, index=matrix_df.index, columns=matrix_df.columns)
-
-    if method == "jaccard":
-        index = matrix_df.index
-        row_sums = matrix_df.sum(axis=1)
-        jaccard_df = pd.DataFrame(0.0, index=index, columns=index)
-
-        for i in index:
-            for j in index:
-                if i == j:
-                    jaccard_df.loc[i, j] = 1.0
-                else:
-                    numerator = matrix_df.loc[i, j]
-                    denominator = row_sums[i] + row_sums[j] - numerator
-                    jaccard_df.loc[i, j] = numerator / denominator if denominator > 0 else 0.0
-
-        return jaccard_df
-
-"""Helpers for exploratory factor analysis and related matrix decompositions."""
-# Factor analysis
+# (2.18) normalize_symmetric_matrix: kanonična implementacija je v biblium.utilsbib_modules.network
 
 def build_document_term_matrix(
     df: pd.DataFrame,
@@ -12082,7 +12351,7 @@ def conceptual_structure_analysis(
         try:
             model = model.fit(dtm_clean)
         except Exception as e:
-            raise ValueError(f"MCA/CA fitting failed: {e}. Try different parameters.")
+            raise ValueError(f"MCA/CA fitting failed: {e}. Try different parameters.") from e
         
         prince_terms = model.column_coordinates(dtm_clean)
         
@@ -13978,13 +14247,19 @@ def compare_counts(
 # Tale je moj - ne uporabljaj, ker ga plačujem
 #API keys should be configured via GUI or environment variables
 
+# Optional dependency: huggingface_hub is only needed for LLM helpers below.
+# Import lazily so that biblium works without it (fix 2026-08-06, app 003_DEA).
 try:
     from huggingface_hub import InferenceClient
     from huggingface_hub.utils import BadRequestError
-except Exception:  # huggingface_hub is an optional (llm) dependency
-    InferenceClient = None
-    class BadRequestError(Exception):
-        pass
+    HAS_HUGGINGFACE_HUB = True
+except ImportError:  # pragma: no cover
+    InferenceClient = None  # type: ignore[assignment]
+
+    class BadRequestError(Exception):  # type: ignore[no-redef]
+        """Placeholder when huggingface_hub is not installed."""
+
+    HAS_HUGGINGFACE_HUB = False
 
 """Comments and helpers around safe default LLM model presets for hosted or shared environments."""
 # You can still keep your MODEL_PRESETS elsewhere; these are just safe fallbacks for hosted use.
@@ -14292,7 +14567,12 @@ def llm_describe_table(
 """Helpers for building and analysing document-level citation networks."""
 # Citation network of documents
 
-from thefuzz import fuzz
+# Optional dependency: prefer thefuzz, fall back to API-compatible rapidfuzz
+# (fix 2026-08-06, app 003_DEA: module-level import crashed biblium without thefuzz).
+try:
+    from thefuzz import fuzz
+except ImportError:  # pragma: no cover
+    from rapidfuzz import fuzz  # type: ignore[no-redef]
 
 def normalize_text(text: str) -> str:
     """Normalize text for comparison: lowercase, remove punctuation, collapse whitespace."""
@@ -15450,74 +15730,11 @@ def build_thematic_map(
 """Additional network-analysis helpers for plotting, filtering and describing graphs."""
 # Network analysis functions
 
-def louvain_partition(
-    G,
-    resolution = 1.0,
-    randomize = False,
-    random_state = None,
-):
-    """
-    Detect communities using the Louvain method.
+# (2.18) louvain_partition: kanonična implementacija je v biblium.utilsbib_modules.network
 
-    Parameters
-    ----------
-    G : networkx.Graph
-    resolution : float, optional
-    randomize : bool, optional
-    random_state : int or RandomState, optional
+# (2.18) greedy_modularity_partition: kanonična implementacija je v biblium.utilsbib_modules.network
 
-    Returns
-    -------
-    dict
-        Node-to-community mapping.
-    """
-    if community_louvain is None:
-        raise ImportError("python-louvain package is required for Louvain partition")
-    return community_louvain.best_partition(
-        G, resolution=resolution, randomize=randomize, random_state=random_state
-    )
-
-def greedy_modularity_partition(
-    G,
-    weight = 'weight',
-):
-    """
-    Detect communities by greedy modularity maximization.
-
-    Parameters
-    ----------
-    G : networkx.Graph
-    weight : str or None, optional
-
-    Returns
-    -------
-    dict
-        Node-to-community mapping.
-    """
-    communities = nx.algorithms.community.greedy_modularity_communities(G, weight=weight)
-    return {node: cid for cid, comm in enumerate(communities) for node in comm}
-
-def label_propagation_partition(
-    G,
-    weight = None,
-    seed = None,
-):
-    """
-    Detect communities via asynchronous label propagation.
-
-    Parameters
-    ----------
-    G : networkx.Graph
-    weight : str or None, optional
-    seed : int or None, optional
-
-    Returns
-    -------
-    dict
-        Node-to-community mapping.
-    """
-    communities = nx.algorithms.community.asyn_lpa_communities(G, weight=weight, seed=seed)
-    return {node: cid for cid, comm in enumerate(communities) for node in comm}
+# (2.18) label_propagation_partition: kanonična implementacija je v biblium.utilsbib_modules.network
 
 def girvan_newman_partition(
     G,
@@ -15692,53 +15909,7 @@ def spinglass_partition(
                                 spins=spins)
     return {v['name']: wc.membership[v.index] for v in g.vs}
 
-def add_partitions(
-    G,
-    louvain_kwargs = None,
-    greedy_kwargs = None,
-    label_kwargs = None,
-    girvan_kwargs = None,
-    k_clique_kwargs = None,
-    kernighan_kwargs = None,
-    walktrap_kwargs = None,
-    edge_betweenness_kwargs = None,
-    infomap_kwargs = None,
-    leading_kwargs = None,
-    leiden_kwargs = None,
-    spinglass_kwargs = None,
-):
-    """
-    Compute and attach multiple community partitions to G.
-
-    Returns
-    -------
-    dict
-        Mapping method names to partition dicts.
-    """
-    configs = {
-        "walktrap": (walktrap_partition, walktrap_kwargs or {}),
-        "edge_betweenness": (edge_betweenness_partition, edge_betweenness_kwargs or {}),
-        "infomap": (infomap_partition, infomap_kwargs or {}),
-        "leading_eigenvector": (leading_eigenvector_partition, leading_kwargs or {}),
-        "leiden": (leiden_partition, leiden_kwargs or {}),
-        "spinglass": (spinglass_partition, spinglass_kwargs or {}),
-        "louvain": (louvain_partition, louvain_kwargs or {}),
-        "greedy_modularity": (greedy_modularity_partition, greedy_kwargs or {}),
-        "label_propagation": (label_propagation_partition, label_kwargs or {}),
-        "girvan_newman": (girvan_newman_partition, girvan_kwargs or {}),
-        "k_clique": (k_clique_partition, k_clique_kwargs or {}),
-        "kernighan_lin": (kernighan_lin_partition, kernighan_kwargs or {}),
-    }
-    results = {}
-    for name, (func, kwargs) in configs.items():
-        try:
-            partition = func(G, **kwargs)
-            results[name] = partition
-            for node, cid in partition.items():
-                G.nodes[node][f"partition_{name}"] = cid
-        except:
-            pass
-    return results
+# (2.18) add_partitions: kanonična implementacija je v biblium.utilsbib_modules.network
 
 def add_vectors_from_dataframe(
     G,
@@ -15765,159 +15936,11 @@ def add_vectors_from_dataframe(
                 G.nodes[node][col] = row[col]
     return G
 
-def nodes_to_dataframe(
-    G,
-):
-    """
-    Export all node attributes to a pandas DataFrame, including partitions and vector values.
+# (2.18) nodes_to_dataframe: kanonična implementacija je v biblium.utilsbib_modules.network
 
-    Parameters
-    ----------
-    G : networkx.Graph
-        The graph whose node attributes are to be exported.
+# (2.18) save_network: kanonična implementacija je v biblium.utilsbib_modules.network
 
-    Returns
-    -------
-    pandas.DataFrame
-        DataFrame with one row per node and one column per node attribute.
-    """
-    nodes = list(G.nodes(data=True))
-    keys = set()
-    for _, attrs in nodes:
-        keys.update(attrs.keys())
-    columns = ["node"] + sorted(keys)
-    records = []
-    for n, attrs in nodes:
-        rec = {"node": n}
-        for k in keys:
-            rec[k] = attrs.get(k)
-        records.append(rec)
-    return pd.DataFrame(records, columns=columns)
-
-def save_network(
-    G,
-    filename,
-    formats=None,
-    vector_cols=None,
-    partition_attr="partition",
-):
-    """
-    Save a NetworkX graph in various formats, including Pajek (.net, .clu, .vec),
-    GraphML, and GEXF.
-
-    Parameters
-    ----------
-    G : networkx.Graph
-        The graph to save.
-    filename : str
-        Path/prefix for saving files (no extension).
-    formats : list[str], optional
-        Formats to save ("pajek", "graphml", "gexf"). Defaults to all.
-    vector_cols : list[str], optional
-        Node attributes to export as .vec files.
-    partition_attr : str, optional
-        Node attribute prefix to use for .clu partition file(s).
-        All node attributes whose names start with this prefix are exported
-        as separate .clu files.
-    """
-    if formats is None:
-        formats = ["pajek", "graphml", "gexf"]
-
-    # --- Pajek export (.net, .clu, .vec) ------------------------------------
-    if "pajek" in formats:
-        # Copy G and convert all node/edge attributes to strings for Pajek.
-        # This avoids "Non-string attribute" warnings from NetworkX's Pajek writer.
-        G_pajek = G.copy()
-
-        # Node attributes -> strings
-        for _, attrs in G_pajek.nodes(data=True):
-            for key, value in list(attrs.items()):
-                if value is None:
-                    # Drop None-valued attributes
-                    del attrs[key]
-                elif not isinstance(value, str):
-                    attrs[key] = str(value)
-
-        # Edge attributes -> strings
-        for _, _, attrs in G_pajek.edges(data=True):
-            for key, value in list(attrs.items()):
-                if value is None:
-                    del attrs[key]
-                elif not isinstance(value, str):
-                    attrs[key] = str(value)
-
-        # Main Pajek network file
-        nx.write_pajek(G_pajek, f"{filename}.net")
-
-        # Partition .clu files (use ORIGINAL G so cluster IDs stay numeric)
-        if any(
-            any(k.startswith(partition_attr) for k in d)
-            for _, d in G.nodes(data=True)
-        ):
-            partition_attrs = set()
-            for _, d in G.nodes(data=True):
-                partition_attrs.update(
-                    k for k in d if k.startswith(partition_attr)
-                )
-
-            # Save each partition to its own .clu file
-            for attr in sorted(partition_attrs):  # sorted for consistent order
-                with open(f"{filename}_{attr}.clu", "w", encoding="utf-8") as f:
-                    f.write(f"*Vertices {G.number_of_nodes()}\n")
-                    for n in G.nodes():
-                        # Pajek expects integers, but str(int) is fine in text file
-                        f.write(f"{G.nodes[n].get(attr, 1)}\n")
-
-        # Vector .vec files (again, use ORIGINAL G)
-        if vector_cols:
-            for vec_col in vector_cols:
-                with open(f"{filename}_{vec_col}.vec", "w", encoding="utf-8") as f:
-                    f.write(f"*Vertices {G.number_of_nodes()}\n")
-                    for n in G.nodes():
-                        f.write(f"{G.nodes[n].get(vec_col, 0)}\n")
-
-    # --- GraphML -------------------------------------------------------------
-    if "graphml" in formats:
-        nx.write_graphml(G, f"{filename}.graphml")
-
-    # --- GEXF ----------------------------------------------------------------
-    if "gexf" in formats:
-        nx.write_gexf(G, f"{filename}.gexf")
-
-
-def save_to_pajek(
-    G,
-    basename,
-    partition_attrs = None,
-    vector_attrs = None,
-):
-    """
-    Export graph and node attributes to Pajek files.
-
-    Parameters
-    ----------
-    G : networkx.Graph
-    basename : str
-        Base filename for .net, .clu, .vec files.
-    partition_attrs : str or list of str, optional
-    vector_attrs : list of str, optional
-    """
-    nx.write_pajek(G, f"{basename}.net")
-    nodes = list(G.nodes())
-    if partition_attrs:
-        attrs = [partition_attrs] if isinstance(partition_attrs, str) else partition_attrs
-        for attr in attrs:
-            fname = f"{basename}.clu" if len(attrs) == 1 else f"{basename}_{attr}.clu"
-            with open(fname, "w") as f:
-                f.write(f"*Vertices {len(nodes)}\n")
-                for n in nodes:
-                    f.write(str(G.nodes[n].get(attr, 0)) + "\n")
-    if vector_attrs:
-        with open(f"{basename}.vec", "w") as f:
-            f.write(f"*Vertices {len(nodes)}\n")
-            for n in nodes:
-                vals = [str(G.nodes[n].get(v, 0)) for v in vector_attrs]
-                f.write(" ".join(vals) + "\n")
+# (2.18) save_to_pajek: kanonična implementacija je v biblium.utilsbib_modules.network
 
 def save_graph(
     G,
@@ -15946,77 +15969,9 @@ def save_graph(
     else:
         raise ValueError(f"Unsupported format: {file_format}")
 
-def compute_basic_stats(
-    G,
-):
-    """
-    Compute basic statistics of the graph.
+# (2.18) compute_basic_stats: kanonična implementacija je v biblium.utilsbib_modules.network
 
-    Parameters
-    ----------
-    G : networkx.Graph
-
-    Returns
-    -------
-    dict
-        Contains num_nodes, num_edges, density, avg_degree, avg_clustering, num_connected_components, largest_cc_size, diameter, avg_shortest_path_length.
-    """
-    n = G.number_of_nodes()
-    m = G.number_of_edges()
-    density = nx.density(G)
-    degrees = [d for _, d in G.degree()]
-    avg_degree = sum(degrees) / n if n else 0
-    avg_clustering = nx.average_clustering(G)
-    cc = list(nx.connected_components(G))
-    num_cc = len(cc)
-    largest_cc = max(cc, key=len) if cc else set()
-    sub = G.subgraph(largest_cc)
-    try:
-        diameter = nx.diameter(sub)
-        avg_sp = nx.average_shortest_path_length(sub)
-    except (nx.NetworkXError, nx.NetworkXNoPath):
-        diameter = None
-        avg_sp = None
-    return {
-        "num_nodes": n,
-        "num_edges": m,
-        "density": density,
-        "avg_degree": avg_degree,
-        "avg_clustering": avg_clustering,
-        "num_connected_components": num_cc,
-        "largest_cc_size": len(largest_cc),
-        "diameter": diameter,
-        "avg_shortest_path_length": avg_sp
-    }
-
-def compute_centralities(
-    G,
-):
-    """
-    Compute centrality measures for the graph.
-
-    Parameters
-    ----------
-    G : networkx.Graph
-
-    Returns
-    -------
-    dict
-        degree, closeness, betweenness, eigenvector centralities.
-    """
-    deg = nx.degree_centrality(G)
-    clo = nx.closeness_centrality(G)
-    bet = nx.betweenness_centrality(G)
-    try:
-        eig = nx.eigenvector_centrality(G, max_iter=1000)
-    except nx.NetworkXError:
-        eig = {}
-    return {
-        "degree_centrality": deg,
-        "closeness_centrality": clo,
-        "betweenness_centrality": bet,
-        "eigenvector_centrality": eig
-    }
+# (2.18) compute_centralities: kanonična implementacija je v biblium.utilsbib_modules.network
 
 def compute_cluster_metrics(
     G,
@@ -17510,12 +17465,4299 @@ def enrich_with_repository_links(
     return df, stats
 
 
-# Import growth model functions from utilsbib_modules
-try:
-    from biblium.utilsbib_modules.time_series import (
-        fit_growth_model,
-        fit_life_cycle_model,
-    )
-except ImportError:
-    pass
+# (2.18) growth model functions are now defined in this file — see TIME SERIES section below
 
+
+
+# =============================================================================
+# COUNTRIES — display helpers (integrated from utilsbib_modules.countries)
+# =============================================================================
+
+# ============================================================================
+
+# Default display overrides — ISO 3166-1 alpha-2 → preferred name
+# (uporabnik lahko razširi prek parametra)
+DEFAULT_COUNTRY_DISPLAY: dict[str, str] = {
+    "GB": "UK",          # United Kingdom (kolokvialno UK je razumljivejši kot GB)
+    "US": "US",
+    # po želji dodaj druge mappinge
+}
+
+
+def country_iso2_to_display(iso2: str,
+                              overrides: dict[str, str] | None = None) -> str:
+    """
+    Pretvori ISO2 v prikazno ime, ki si ga uporabnik želi.
+
+    Parameters
+    ----------
+    iso2 : str
+        ISO 3166-1 alpha-2 koda (npr. "GB", "MN", "US").
+    overrides : dict, optional
+        Custom mapping (npr. {"GB": "UK"}). Spojen z DEFAULT_COUNTRY_DISPLAY.
+
+    Returns
+    -------
+    str
+        Prikazna oznaka — bodisi iz overrides bodisi originalni ISO2.
+    """
+    if not isinstance(iso2, str) or not iso2.strip():
+        return iso2
+    iso2 = iso2.strip().upper()
+    omap = dict(DEFAULT_COUNTRY_DISPLAY)
+    if overrides:
+        omap.update({k.upper(): v for k, v in overrides.items()})
+    return omap.get(iso2, iso2)
+
+
+def map_country_codes_to_display(series: "pd.Series",
+                                    overrides: dict[str, str] | None = None,
+                                    sep: str | None = None) -> "pd.Series":
+    """
+    Mapira pd.Series ISO2 kod v prikazne oznake. Če je vsaka vrednost
+    seznam (sep podan), se mappira vsak token posebej.
+    """
+    import pandas as pd
+    if sep is None:
+        return series.map(lambda v: country_iso2_to_display(v, overrides))
+    def _map_list(s):
+        if not isinstance(s, str):
+            return s
+        items = [country_iso2_to_display(t.strip(), overrides)
+                 for t in s.split(sep) if t.strip()]
+        return sep.join(items)
+    return series.map(_map_list)
+
+
+def diagnose_country_codes_in_corpus(
+    df: "pd.DataFrame",
+    col: str = "oa_institution_countries",
+    sep: str = "; ",
+    institution_col: str = "oa_institutions",
+    institution_sep: str = "; ",
+    top_n: int = 25,
+    suspicious_threshold: int = 20,
+    verbose: bool = True,
+) -> "pd.DataFrame":
+    """
+    Diagnostika ISO2 country kod v korpusu — za sanity check.
+
+    Za vsak ISO2 najde top 5 institucij, ki tej kodi pripadajo. To omogoči
+    preverbo "ali je MN res Mongolia ali OpenAlex artefakt (npr. Minnesota)".
+
+    Parameters
+    ----------
+    df : DataFrame
+        Mora vsebovati `col` (country ISO2 kode, sep-separated) in opcijsko
+        `institution_col` (display imena institucij, paralelno).
+    col : str
+        Stolpec z državami.
+    sep : str
+        Separator v `col`.
+    institution_col : str
+        Stolpec z institucijami.
+    institution_sep : str
+        Separator v `institution_col`.
+    top_n : int
+        Koliko top ISO2 razdrobi.
+    suspicious_threshold : int
+        ISO2 z manj kot toliko zapisov se označi kot "sumljiv".
+    verbose : bool
+        Izpiši top N.
+
+    Returns
+    -------
+    DataFrame
+        Vrstice = ISO2; stolpci: iso2, display, n_documents,
+        top_institutions (semicolon-joined), is_suspicious.
+    """
+    import pandas as pd
+    from collections import Counter, defaultdict
+
+    if col not in df.columns:
+        if verbose:
+            print(f"  ! stolpec {col} ni v df; preskačem")
+        return pd.DataFrame()
+
+    has_inst = institution_col in df.columns
+
+    iso_counter = Counter()
+    iso_to_insts: dict[str, Counter] = defaultdict(Counter)
+
+    for idx, row in df.iterrows():
+        cs = row.get(col)
+        if not isinstance(cs, str) or not cs.strip():
+            continue
+        iso_list = [c.strip() for c in cs.split(sep) if c.strip()]
+        for c in iso_list:
+            iso_counter[c] += 1
+        if has_inst:
+            inst_str = row.get(institution_col) or ""
+            if isinstance(inst_str, str):
+                inst_list = [i.strip() for i in inst_str.split(institution_sep) if i.strip()]
+                # naključno: poveži vse institucije z vsemi državami v vrstici
+                # (heuristika — eksaktna povezava bi rabila OpenAlex authorships)
+                for c in iso_list:
+                    for inst in inst_list:
+                        iso_to_insts[c][inst] += 1
+
+    rows = []
+    for iso, n in iso_counter.most_common():
+        top_insts = ""
+        if has_inst:
+            top_insts = "; ".join(
+                f"{name} ({cnt})" for name, cnt in iso_to_insts[iso].most_common(5)
+            )
+        rows.append({
+            "iso2": iso,
+            "display": country_iso2_to_display(iso),
+            "n_documents": n,
+            "top_institutions": top_insts,
+            "is_suspicious": n < suspicious_threshold,
+        })
+    result = pd.DataFrame(rows)
+
+    if verbose and not result.empty:
+        print(f"\n  Top {min(top_n, len(result))} držav po številu zapisov "
+              f"(skupaj {len(result)} unikatnih ISO2):")
+        for _, r in result.head(top_n).iterrows():
+            iso = r["iso2"]; disp = r["display"]; n = r["n_documents"]
+            print(f"    {iso:>3} -> {disp:<8} {n:>6}")
+            if r["top_institutions"]:
+                inst = r["top_institutions"][:200]
+                print(f"        top institucije: {inst}")
+
+    return result
+
+
+# =============================================================================
+# PLOT SAVING (integrated from utilsbib_modules.excel_io)
+# =============================================================================
+
+def save_plot(
+    path: str,
+    dpi: int = 600,
+    formats: List[str] = None,
+    tight: bool = True,
+) -> None:
+    """
+    Save the current matplotlib figure to file(s).
+    
+    Parameters
+    ----------
+    path : str
+        Base path (without extension).
+    dpi : int
+        Resolution for raster formats.
+    formats : list of str, optional
+        File formats to save. Defaults to ["png", "svg", "pdf"].
+    tight : bool
+        If True, use tight bounding box.
+    """
+    import matplotlib.pyplot as plt
+    
+    if formats is None:
+        formats = ["png", "svg", "pdf"]
+    
+    bbox = "tight" if tight else None
+    
+    for fmt in formats:
+        full_path = f"{path}.{fmt}"
+        plt.savefig(full_path, dpi=dpi, bbox_inches=bbox, format=fmt)
+
+
+# =============================================================================
+# CACHING (integrated from utilsbib_modules.caching)
+# =============================================================================
+
+# -*- coding: utf-8 -*-
+"""
+Caching utilities for expensive computations.
+
+This module provides caching mechanisms for:
+- Co-occurrence matrices
+- Citation networks
+- Document-term matrices
+- Count operations (when repeated)
+
+The caching is designed to be:
+- Memory-efficient (stores only necessary data)
+- Invalidation-aware (clears when source data changes)
+- Optional (can be disabled)
+"""
+
+
+import hashlib
+from functools import wraps
+from typing import Any, Callable, Dict, Optional, Tuple, TypeVar, Union
+
+import pandas as pd
+import numpy as np
+
+# Type variable for generic return types
+T = TypeVar("T")
+
+
+class CacheKey:
+    """
+    Generate consistent cache keys from various inputs.
+    
+    Handles DataFrames, lists, dicts, and primitive types.
+    """
+    
+    @staticmethod
+    def from_dataframe(df: pd.DataFrame, sample_rows: int = 100) -> str:
+        """
+        Create a hash key from a DataFrame.
+        
+        Uses shape, column names, dtypes, and a sample of data
+        to create a reasonably unique key without hashing the entire frame.
+        """
+        if df is None:
+            return "None"
+        
+        components = [
+            str(df.shape),
+            str(list(df.columns)),
+            str(list(df.dtypes)),
+        ]
+        
+        # Sample some data for uniqueness
+        if len(df) > 0:
+            sample_size = min(sample_rows, len(df))
+            indices = np.linspace(0, len(df) - 1, sample_size, dtype=int)
+            sample = df.iloc[indices]
+            components.append(sample.to_json())
+        
+        combined = "|".join(components)
+        return hashlib.md5(combined.encode()).hexdigest()[:16]
+    
+    @staticmethod
+    def from_args(*args: Any, **kwargs: Any) -> str:
+        """
+        Create a hash key from function arguments.
+        """
+        components = []
+        
+        for arg in args:
+            if isinstance(arg, pd.DataFrame):
+                components.append(CacheKey.from_dataframe(arg))
+            elif isinstance(arg, (list, tuple)):
+                components.append(str(sorted(arg) if all(isinstance(x, str) for x in arg) else arg))
+            elif isinstance(arg, dict):
+                components.append(str(sorted(arg.items())))
+            else:
+                components.append(str(arg))
+        
+        for k, v in sorted(kwargs.items()):
+            if isinstance(v, pd.DataFrame):
+                components.append(f"{k}={CacheKey.from_dataframe(v)}")
+            elif isinstance(v, (list, tuple)):
+                components.append(f"{k}={sorted(v) if all(isinstance(x, str) for x in v) else v}")
+            elif isinstance(v, dict):
+                components.append(f"{k}={sorted(v.items())}")
+            else:
+                components.append(f"{k}={v}")
+        
+        combined = "|".join(components)
+        return hashlib.md5(combined.encode()).hexdigest()[:16]
+
+
+class ResultCache:
+    """
+    A simple LRU-style cache for expensive computations.
+    
+    Features:
+    - Configurable max size
+    - Optional TTL (time-to-live)
+    - Statistics tracking
+    - Manual invalidation
+    
+    Attributes
+    ----------
+    max_size : int
+        Maximum number of items to cache.
+    enabled : bool
+        Whether caching is active.
+    stats : dict
+        Cache hit/miss statistics.
+    """
+    
+    def __init__(self, max_size: int = 50, enabled: bool = True):
+        """
+        Initialize the cache.
+        
+        Parameters
+        ----------
+        max_size : int, default 50
+            Maximum number of cached results.
+        enabled : bool, default True
+            Whether caching is enabled.
+        """
+        self.max_size = max_size
+        self.enabled = enabled
+        self._cache: Dict[str, Tuple[Any, int]] = {}  # key -> (value, access_count)
+        self._access_order: list = []
+        self.stats = {"hits": 0, "misses": 0}
+    
+    def get(self, key: str) -> Optional[Any]:
+        """
+        Retrieve a cached value.
+        
+        Parameters
+        ----------
+        key : str
+            Cache key.
+            
+        Returns
+        -------
+        Any or None
+            Cached value if found, None otherwise.
+        """
+        if not self.enabled:
+            return None
+        
+        if key in self._cache:
+            self.stats["hits"] += 1
+            # Update access order
+            if key in self._access_order:
+                self._access_order.remove(key)
+            self._access_order.append(key)
+            return self._cache[key][0]
+        
+        self.stats["misses"] += 1
+        return None
+    
+    def set(self, key: str, value: Any) -> None:
+        """
+        Store a value in the cache.
+        
+        Parameters
+        ----------
+        key : str
+            Cache key.
+        value : Any
+            Value to cache.
+        """
+        if not self.enabled:
+            return
+        
+        # Evict oldest if at capacity
+        while len(self._cache) >= self.max_size and self._access_order:
+            oldest_key = self._access_order.pop(0)
+            self._cache.pop(oldest_key, None)
+        
+        self._cache[key] = (value, 1)
+        if key not in self._access_order:
+            self._access_order.append(key)
+    
+    def clear(self, prefix: Optional[str] = None) -> int:
+        """
+        Clear the cache.
+        
+        Parameters
+        ----------
+        prefix : str, optional
+            If provided, only clear keys starting with this prefix.
+            
+        Returns
+        -------
+        int
+            Number of items cleared.
+        """
+        if prefix is None:
+            count = len(self._cache)
+            self._cache.clear()
+            self._access_order.clear()
+            return count
+        
+        keys_to_remove = [k for k in self._cache if k.startswith(prefix)]
+        for k in keys_to_remove:
+            del self._cache[k]
+            if k in self._access_order:
+                self._access_order.remove(k)
+        return len(keys_to_remove)
+    
+    def get_stats(self) -> Dict[str, Any]:
+        """
+        Get cache statistics.
+        
+        Returns
+        -------
+        dict
+            Statistics including hits, misses, size, and hit rate.
+        """
+        total = self.stats["hits"] + self.stats["misses"]
+        hit_rate = self.stats["hits"] / total if total > 0 else 0.0
+        return {
+            **self.stats,
+            "size": len(self._cache),
+            "max_size": self.max_size,
+            "hit_rate": hit_rate,
+            "enabled": self.enabled,
+        }
+    
+    def __len__(self) -> int:
+        return len(self._cache)
+    
+    def __contains__(self, key: str) -> bool:
+        return key in self._cache
+
+
+# Global cache instance
+_global_cache = ResultCache(max_size=100, enabled=True)
+
+
+def get_cache() -> ResultCache:
+    """Get the global cache instance."""
+    return _global_cache
+
+
+def set_cache_enabled(enabled: bool) -> None:
+    """Enable or disable the global cache."""
+    _global_cache.enabled = enabled
+
+
+def clear_cache(prefix: Optional[str] = None) -> int:
+    """Clear the global cache."""
+    return _global_cache.clear(prefix)
+
+
+def get_cache_stats() -> Dict[str, Any]:
+    """Get global cache statistics."""
+    return _global_cache.get_stats()
+
+
+def cached(
+    prefix: str = "",
+    key_func: Optional[Callable[..., str]] = None,
+    cache: Optional[ResultCache] = None,
+) -> Callable[[Callable[..., T]], Callable[..., T]]:
+    """
+    Decorator to cache function results.
+    
+    Parameters
+    ----------
+    prefix : str, default ""
+        Prefix for cache keys (useful for namespacing).
+    key_func : callable, optional
+        Custom function to generate cache key from arguments.
+        If None, uses CacheKey.from_args.
+    cache : ResultCache, optional
+        Cache instance to use. If None, uses global cache.
+        
+    Returns
+    -------
+    callable
+        Decorated function with caching.
+        
+    Examples
+    --------
+    >>> @cached(prefix="cooc")
+    ... def compute_cooccurrence(df, column, top_n=20):
+    ...     # expensive computation
+    ...     return result
+    """
+    if cache is None:
+        cache = _global_cache
+    
+    def decorator(func: Callable[..., T]) -> Callable[..., T]:
+        @wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> T:
+            if not cache.enabled:
+                return func(*args, **kwargs)
+            
+            # Generate cache key
+            if key_func is not None:
+                key = f"{prefix}:{key_func(*args, **kwargs)}"
+            else:
+                key = f"{prefix}:{func.__name__}:{CacheKey.from_args(*args, **kwargs)}"
+            
+            # Check cache
+            result = cache.get(key)
+            if result is not None:
+                return result
+            
+            # Compute and cache
+            result = func(*args, **kwargs)
+            cache.set(key, result)
+            return result
+        
+        # Add cache control methods to the wrapper
+        wrapper.cache_clear = lambda: cache.clear(f"{prefix}:{func.__name__}")
+        wrapper.cache_info = lambda: cache.get_stats()
+        
+        return wrapper
+    
+    return decorator
+
+
+def cached_property(
+    func: Optional[Callable[[Any], T]] = None,
+    *,
+    attr_name: Optional[str] = None,
+) -> Union[property, Callable[[Callable[[Any], T]], property]]:
+    """
+    A cached property decorator that stores the result on the instance.
+    
+    Unlike functools.cached_property, this can be invalidated by deleting
+    the attribute or calling the instance's clear_cache() method.
+    
+    Parameters
+    ----------
+    func : callable, optional
+        The property getter function.
+    attr_name : str, optional
+        Custom attribute name for storage. Defaults to f"_cached_{func.__name__}".
+        
+    Returns
+    -------
+    property
+        A property descriptor with caching.
+        
+    Examples
+    --------
+    >>> class Analysis:
+    ...     @cached_property
+    ...     def expensive_result(self):
+    ...         # computed once, stored on instance
+    ...         return compute_something()
+    """
+    def decorator(f: Callable[[Any], T]) -> property:
+        name = attr_name or f"_cached_{f.__name__}"
+        
+        @wraps(f)
+        def getter(self: Any) -> T:
+            if not hasattr(self, name):
+                setattr(self, name, f(self))
+            return getattr(self, name)
+        
+        def setter(self: Any, value: T) -> None:
+            setattr(self, name, value)
+        
+        def deleter(self: Any) -> None:
+            if hasattr(self, name):
+                delattr(self, name)
+        
+        return property(getter, setter, deleter, f.__doc__)
+    
+    if func is not None:
+        return decorator(func)
+    return decorator
+
+
+class InstanceCache:
+    """
+    A mixin class that provides per-instance caching.
+    
+    Add this to a class to enable cached computations that are
+    automatically invalidated when the source data changes.
+    
+    Examples
+    --------
+    >>> class MyAnalysis(InstanceCache):
+    ...     def __init__(self, df):
+    ...         super().__init__()
+    ...         self.df = df
+    ...     
+    ...     def compute_something(self, param):
+    ...         return self._get_cached("something", param, self._do_compute, param)
+    ...     
+    ...     def _do_compute(self, param):
+    ...         # expensive computation
+    ...         return result
+    """
+    
+    def __init__(self) -> None:
+        self._instance_cache: Dict[str, Any] = {}
+        self._cache_enabled: bool = True
+    
+    def _get_cached(
+        self,
+        name: str,
+        key: Any,
+        compute_func: Callable[..., T],
+        *args: Any,
+        **kwargs: Any,
+    ) -> T:
+        """
+        Get a cached result or compute and cache it.
+        
+        Parameters
+        ----------
+        name : str
+            Cache category name.
+        key : Any
+            Key within the category (converted to string).
+        compute_func : callable
+            Function to compute the result if not cached.
+        *args, **kwargs :
+            Arguments passed to compute_func.
+            
+        Returns
+        -------
+        Any
+            The cached or computed result.
+        """
+        if not self._cache_enabled:
+            return compute_func(*args, **kwargs)
+        
+        full_key = f"{name}:{key}"
+        
+        if full_key not in self._instance_cache:
+            self._instance_cache[full_key] = compute_func(*args, **kwargs)
+        
+        return self._instance_cache[full_key]
+    
+    def clear_instance_cache(self, prefix: Optional[str] = None) -> int:
+        """
+        Clear the instance cache.
+        
+        Parameters
+        ----------
+        prefix : str, optional
+            If provided, only clear keys starting with this prefix.
+            
+        Returns
+        -------
+        int
+            Number of items cleared.
+        """
+        if prefix is None:
+            count = len(self._instance_cache)
+            self._instance_cache.clear()
+            return count
+        
+        keys_to_remove = [k for k in self._instance_cache if k.startswith(prefix)]
+        for k in keys_to_remove:
+            del self._instance_cache[k]
+        return len(keys_to_remove)
+    
+    def set_cache_enabled(self, enabled: bool) -> None:
+        """Enable or disable instance caching."""
+        self._cache_enabled = enabled
+    
+    def get_cache_info(self) -> Dict[str, Any]:
+        """Get instance cache information."""
+        return {
+            "size": len(self._instance_cache),
+            "enabled": self._cache_enabled,
+            "keys": list(self._instance_cache.keys()),
+        }
+
+
+# Convenience functions for specific computation types
+
+def cache_cooccurrence_key(
+    df: pd.DataFrame,
+    column: str,
+    items: Optional[list] = None,
+    top_n: int = 20,
+    **kwargs: Any,
+) -> str:
+    """Generate a cache key for co-occurrence computation."""
+    df_key = CacheKey.from_dataframe(df)
+    items_key = str(sorted(items)) if items else "None"
+    return f"cooc:{df_key}:{column}:{items_key}:{top_n}"
+
+
+def cache_network_key(
+    matrix: pd.DataFrame,
+    **kwargs: Any,
+) -> str:
+    """Generate a cache key for network computation."""
+    matrix_key = CacheKey.from_dataframe(matrix)
+    kwargs_key = CacheKey.from_args(**kwargs)
+    return f"net:{matrix_key}:{kwargs_key}"
+
+
+# =============================================================================
+# DATABASE PREPROCESSING (integrated from utilsbib_modules.preprocessing)
+# =============================================================================
+
+# -*- coding: utf-8 -*-
+"""
+Database-specific preprocessing for bibliometric data.
+
+This module provides preprocessing pipelines for different bibliographic databases:
+- PubMed/MEDLINE
+- Lens.org
+- Dimensions
+- Scopus (reference)
+- OpenAlex (reference)
+- Web of Science (reference)
+
+Each preprocessor standardizes column names, handles database-specific formats,
+and prepares data for unified analysis.
+"""
+
+
+import re
+from typing import Dict, Optional
+
+import numpy as np
+import pandas as pd
+
+
+# =============================================================================
+# STANDARD COLUMN NAMES
+# =============================================================================
+
+STANDARD_COLUMNS = {
+    # Core identifiers
+    "doc_id": ["DOI", "PMID", "EID", "Lens ID", "Publication ID", "id"],
+    "doi": ["DOI", "doi"],
+    "pmid": ["PMID", "PubMed ID", "pmid"],
+    
+    # Bibliographic info
+    "title": ["Title", "title", "ArticleTitle", "TI"],
+    "abstract": ["Abstract", "abstract", "AbstractText", "AB"],
+    "year": ["Year", "publication_year", "PubYear", "Year Published", "PY", "DP"],
+    "authors": ["Authors", "authors", "Author/s", "AU", "AuthorList"],
+    "source": ["Source title", "Journal", "source_title", "Source Title", "JT", "SO"],
+    
+    # Keywords
+    "author_keywords": ["Author Keywords", "Keywords", "keywords", "OT", "DE"],
+    "index_keywords": ["Index Keywords", "MeSH Terms", "topics.display_name", "MH", "ID"],
+    
+    # Citations
+    "cited_by": ["Cited by", "Times cited", "cited_by_count", "Scholarly Citations", "TC"],
+    "references": ["References", "Cited References", "referenced_works", "Reference IDs", "CR"],
+    
+    # Affiliations
+    "affiliations": ["Affiliations", "Authors Affiliations", "affiliations", "AD", "C1"],
+    
+    # Other
+    "doc_type": ["Document Type", "Publication Type", "type", "PT", "DT"],
+    "language": ["Language", "language", "LA"],
+    "issn": ["ISSN", "ISSNs", "issn", "SN"],
+    "volume": ["Volume", "volume", "VL", "VI"],
+    "issue": ["Issue", "issue", "IS", "IP"],
+    "pages": ["Pages", "Start Page", "Page start", "PG", "BP"],
+    "publisher": ["Publisher", "publisher", "PB"],
+    "open_access": ["Open Access", "is_open_access", "OA"],
+    "fwci": ["fwci", "Field-Weighted Citation Impact", "FWCI"],
+}
+
+
+def find_column(df: pd.DataFrame, standard_name: str) -> Optional[str]:
+    """
+    Find the actual column name in DataFrame matching a standard name.
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Input DataFrame.
+    standard_name : str
+        Standard column name to look for.
+        
+    Returns
+    -------
+    str or None
+        Actual column name if found, None otherwise.
+    """
+    if standard_name not in STANDARD_COLUMNS:
+        # Try direct match
+        if standard_name in df.columns:
+            return standard_name
+        return None
+    
+    candidates = STANDARD_COLUMNS[standard_name]
+    for col in candidates:
+        if col in df.columns:
+            return col
+    
+    # Try case-insensitive match
+    df_cols_lower = {c.lower(): c for c in df.columns}
+    for col in candidates:
+        if col.lower() in df_cols_lower:
+            return df_cols_lower[col.lower()]
+    
+    return None
+
+
+def standardize_columns(
+    df: pd.DataFrame,
+    column_mapping: Optional[Dict[str, str]] = None,
+) -> pd.DataFrame:
+    """
+    Standardize column names to common format.
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Input DataFrame.
+    column_mapping : dict, optional
+        Custom mapping from current to standard names.
+        
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with standardized column names.
+    """
+    df = df.copy()
+    
+    if column_mapping:
+        df = df.rename(columns=column_mapping)
+    
+    # Auto-map known columns
+    rename_map = {}
+    for standard, candidates in STANDARD_COLUMNS.items():
+        for candidate in candidates:
+            if candidate in df.columns and candidate != standard:
+                # Only rename if standard name not already present
+                if standard not in df.columns:
+                    rename_map[candidate] = standard
+                break
+    
+    if rename_map:
+        df = df.rename(columns=rename_map)
+    
+    return df
+
+
+# =============================================================================
+# PUBMED PREPROCESSING
+# =============================================================================
+
+def preprocess_pubmed(
+    df: pd.DataFrame,
+    separator: str = "; ",
+    parse_date: bool = True,
+) -> pd.DataFrame:
+    """
+    Preprocess PubMed/MEDLINE data for bibliometric analysis.
+    
+    Handles:
+    - Author name standardization (Last, First format)
+    - MeSH term extraction
+    - Date parsing (DP field)
+    - Affiliation parsing
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Raw PubMed data.
+    separator : str
+        Separator for multi-value fields.
+    parse_date : bool
+        If True, parse publication date to year.
+        
+    Returns
+    -------
+    pd.DataFrame
+        Preprocessed DataFrame.
+    """
+    df = df.copy()
+    
+    # Standardize column names first
+    df = standardize_columns(df)
+    
+    # Parse year from date field if needed
+    if parse_date:
+        # Find the year/date column (may be 'year', 'Year', 'DP', etc.)
+        year_col = None
+        for candidate in ["year", "Year", "DP", "PubDate", "Publication Date"]:
+            if candidate in df.columns:
+                year_col = candidate
+                break
+        
+        if year_col and year_col in df.columns:
+            # Check if it's already a clean year
+            sample = df[year_col].dropna().iloc[0] if len(df[year_col].dropna()) > 0 else None
+            if sample:
+                sample_str = str(sample)
+                if not sample_str.isdigit() or len(sample_str) != 4:
+                    # Needs parsing
+                    df["Year"] = df[year_col].apply(_extract_year_from_pubmed_date)
+                else:
+                    df["Year"] = pd.to_numeric(df[year_col], errors="coerce")
+    
+    # Standardize authors
+    auth_col = None
+    for candidate in ["authors", "Authors", "AU", "AuthorList"]:
+        if candidate in df.columns:
+            auth_col = candidate
+            break
+    
+    if auth_col:
+        df["Authors"] = df[auth_col].apply(
+            lambda x: _standardize_pubmed_authors(x, separator)
+        )
+    
+    # Parse MeSH terms (remove qualifiers, keep descriptors)
+    mesh_col = find_column(df, "index_keywords")
+    if mesh_col and mesh_col in df.columns:
+        df["Index Keywords"] = df[mesh_col].apply(
+            lambda x: _parse_mesh_terms(x, separator)
+        )
+    
+    # Ensure numeric citations
+    cite_col = find_column(df, "cited_by")
+    if cite_col and cite_col in df.columns:
+        df["Cited by"] = pd.to_numeric(df[cite_col], errors="coerce").fillna(0).astype(int)
+    
+    return df
+
+
+def _extract_year_from_pubmed_date(date_str: str) -> Optional[int]:
+    """Extract year from PubMed date format (e.g., '2023 Jan 15')."""
+    if pd.isna(date_str):
+        return None
+    
+    date_str = str(date_str).strip()
+    
+    # Try to find 4-digit year
+    match = re.search(r'\b(19|20)\d{2}\b', date_str)
+    if match:
+        return int(match.group())
+    
+    return None
+
+
+def _standardize_pubmed_authors(authors: str, separator: str = "; ") -> str:
+    """Standardize PubMed author format to 'Last, First' format."""
+    if pd.isna(authors):
+        return ""
+    
+    authors_str = str(authors).strip()
+    if not authors_str:
+        return ""
+    
+    # PubMed uses various separators
+    parts = re.split(r'[;\n]', authors_str)
+    
+    standardized = []
+    for part in parts:
+        part = part.strip()
+        if not part:
+            continue
+        
+        # Already in "Last, First" format
+        if "," in part:
+            standardized.append(part)
+        else:
+            # "First Last" format - convert
+            words = part.split()
+            if len(words) >= 2:
+                last = words[-1]
+                first = " ".join(words[:-1])
+                standardized.append(f"{last}, {first}")
+            else:
+                standardized.append(part)
+    
+    return separator.join(standardized)
+
+
+def _parse_mesh_terms(mesh_str: str, separator: str = "; ") -> str:
+    """Parse MeSH terms, removing qualifiers and keeping main descriptors."""
+    if pd.isna(mesh_str):
+        return ""
+    
+    mesh_str = str(mesh_str).strip()
+    if not mesh_str:
+        return ""
+    
+    terms = []
+    for term in re.split(r'[;\n]', mesh_str):
+        term = term.strip()
+        if not term:
+            continue
+        
+        # Remove asterisks (major topic markers)
+        term = term.replace("*", "")
+        
+        # Remove qualifier (after /)
+        if "/" in term:
+            term = term.split("/")[0].strip()
+        
+        if term and term not in terms:
+            terms.append(term)
+    
+    return separator.join(terms)
+
+
+# =============================================================================
+# LENS.ORG PREPROCESSING
+# =============================================================================
+
+def preprocess_lens(
+    df: pd.DataFrame,
+    separator: str = "; ",
+) -> pd.DataFrame:
+    """
+    Preprocess Lens.org data for bibliometric analysis.
+    
+    Handles:
+    - Author name parsing from JSON-like format
+    - Affiliation extraction
+    - Fields of study normalization
+    - Citation count standardization
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Raw Lens.org data.
+    separator : str
+        Separator for multi-value fields.
+        
+    Returns
+    -------
+    pd.DataFrame
+        Preprocessed DataFrame.
+    """
+    df = df.copy()
+    
+    # Standardize column names
+    df = standardize_columns(df)
+    
+    # Parse authors
+    auth_col = find_column(df, "authors")
+    if auth_col and auth_col in df.columns:
+        df["Authors"] = df[auth_col].apply(
+            lambda x: _parse_lens_authors(x, separator)
+        )
+    
+    # Parse affiliations
+    aff_col = find_column(df, "affiliations")
+    if aff_col and aff_col in df.columns:
+        df["Affiliations"] = df[aff_col].apply(
+            lambda x: _parse_lens_affiliations(x, separator)
+        )
+    
+    # Standardize year
+    year_col = find_column(df, "year")
+    if year_col and year_col in df.columns:
+        df["Year"] = pd.to_numeric(df[year_col], errors="coerce")
+    
+    # Standardize citations
+    cite_col = find_column(df, "cited_by")
+    if cite_col and cite_col in df.columns:
+        df["Cited by"] = pd.to_numeric(df[cite_col], errors="coerce").fillna(0).astype(int)
+    
+    # Parse fields of study
+    fos_col = None
+    for candidate in ["Fields of Study", "fields_of_study", "Subject"]:
+        if candidate in df.columns:
+            fos_col = candidate
+            break
+    
+    if fos_col:
+        df["Index Keywords"] = df[fos_col].apply(
+            lambda x: _parse_lens_fields(x, separator)
+        )
+    
+    return df
+
+
+def _parse_lens_authors(authors: str, separator: str = "; ") -> str:
+    """Parse Lens.org author format."""
+    if pd.isna(authors):
+        return ""
+    
+    authors_str = str(authors).strip()
+    if not authors_str:
+        return ""
+    
+    # Lens may use semicolons or JSON-like format
+    # Try to parse as list
+    if authors_str.startswith("["):
+        try:
+            import json
+            authors_list = json.loads(authors_str.replace("'", '"'))
+            if isinstance(authors_list, list):
+                return separator.join(str(a) for a in authors_list if a)
+        except:
+            pass
+    
+    # Simple split
+    parts = re.split(r'[;\n|]', authors_str)
+    return separator.join(p.strip() for p in parts if p.strip())
+
+
+def _parse_lens_affiliations(affiliations: str, separator: str = "; ") -> str:
+    """Parse Lens.org affiliation format."""
+    if pd.isna(affiliations):
+        return ""
+    
+    aff_str = str(affiliations).strip()
+    if not aff_str:
+        return ""
+    
+    # Similar to authors
+    if aff_str.startswith("["):
+        try:
+            import json
+            aff_list = json.loads(aff_str.replace("'", '"'))
+            if isinstance(aff_list, list):
+                return separator.join(str(a) for a in aff_list if a)
+        except:
+            pass
+    
+    parts = re.split(r'[;\n|]', aff_str)
+    return separator.join(p.strip() for p in parts if p.strip())
+
+
+def _parse_lens_fields(fields: str, separator: str = "; ") -> str:
+    """Parse Lens.org fields of study."""
+    if pd.isna(fields):
+        return ""
+    
+    fields_str = str(fields).strip()
+    if not fields_str:
+        return ""
+    
+    # Handle JSON-like format
+    if fields_str.startswith("["):
+        try:
+            import json
+            fields_list = json.loads(fields_str.replace("'", '"'))
+            if isinstance(fields_list, list):
+                return separator.join(str(f) for f in fields_list if f)
+        except:
+            pass
+    
+    parts = re.split(r'[;\n|,]', fields_str)
+    return separator.join(p.strip() for p in parts if p.strip())
+
+
+# =============================================================================
+# DIMENSIONS PREPROCESSING
+# =============================================================================
+
+def preprocess_dimensions(
+    df: pd.DataFrame,
+    separator: str = "; ",
+) -> pd.DataFrame:
+    """
+    Preprocess Dimensions data for bibliometric analysis.
+    
+    Handles:
+    - Author name standardization
+    - FOR (Fields of Research) code parsing
+    - Citation normalization
+    - Affiliation extraction
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Raw Dimensions data.
+    separator : str
+        Separator for multi-value fields.
+        
+    Returns
+    -------
+    pd.DataFrame
+        Preprocessed DataFrame.
+    """
+    df = df.copy()
+    
+    # Standardize column names
+    df = standardize_columns(df)
+    
+    # Parse authors
+    auth_col = find_column(df, "authors")
+    if auth_col and auth_col in df.columns:
+        df["Authors"] = df[auth_col].apply(
+            lambda x: _parse_dimensions_authors(x, separator)
+        )
+    
+    # Parse FOR categories
+    for_col = None
+    for candidate in ["FOR (ANZSRC 2020)", "FOR (ANZSRC) Categories", "Fields of Research", "Research Areas"]:
+        if candidate in df.columns:
+            for_col = candidate
+            break
+    
+    if for_col:
+        df["Index Keywords"] = df[for_col].apply(
+            lambda x: _parse_dimensions_for(x, separator)
+        )
+    
+    # Standardize year
+    year_col = find_column(df, "year")
+    if year_col and year_col in df.columns:
+        df["Year"] = pd.to_numeric(df[year_col], errors="coerce")
+    
+    # Standardize citations
+    cite_col = find_column(df, "cited_by")
+    if cite_col and cite_col in df.columns:
+        df["Cited by"] = pd.to_numeric(df[cite_col], errors="coerce").fillna(0).astype(int)
+    
+    # Extract FWCI if available
+    fwci_col = find_column(df, "fwci")
+    if fwci_col and fwci_col in df.columns:
+        df["FWCI"] = pd.to_numeric(df[fwci_col], errors="coerce")
+    
+    return df
+
+
+def _parse_dimensions_authors(authors: str, separator: str = "; ") -> str:
+    """Parse Dimensions author format."""
+    if pd.isna(authors):
+        return ""
+    
+    authors_str = str(authors).strip()
+    if not authors_str:
+        return ""
+    
+    # Dimensions uses semicolons
+    parts = authors_str.split(";")
+    cleaned = []
+    
+    for part in parts:
+        part = part.strip()
+        if not part:
+            continue
+        
+        # Remove affiliation in parentheses
+        part = re.sub(r'\s*\([^)]*\)\s*', '', part)
+        
+        if part:
+            cleaned.append(part)
+    
+    return separator.join(cleaned)
+
+
+def _parse_dimensions_for(for_str: str, separator: str = "; ") -> str:
+    """Parse Dimensions FOR (Fields of Research) categories."""
+    if pd.isna(for_str):
+        return ""
+    
+    for_str = str(for_str).strip()
+    if not for_str:
+        return ""
+    
+    # FOR codes may include numeric codes - extract text labels
+    parts = re.split(r'[;\n]', for_str)
+    terms = []
+    
+    for part in parts:
+        part = part.strip()
+        if not part:
+            continue
+        
+        # Remove numeric code prefix (e.g., "0801 Artificial Intelligence")
+        part = re.sub(r'^\d+\s+', '', part)
+        
+        if part and part not in terms:
+            terms.append(part)
+    
+    return separator.join(terms)
+
+
+# =============================================================================
+# UNIFIED PREPROCESSOR
+# =============================================================================
+
+def preprocess_bibliographic_data(
+    df: pd.DataFrame,
+    db: str,
+    separator: str = "; ",
+    **kwargs,
+) -> pd.DataFrame:
+    """
+    Preprocess bibliographic data from any supported database.
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Raw bibliographic data.
+    db : str
+        Database name: 'pubmed', 'lens', 'dimensions', 'scopus', 'openalex', 'wos'
+    separator : str
+        Separator for multi-value fields.
+    **kwargs
+        Additional arguments passed to database-specific preprocessor.
+        
+    Returns
+    -------
+    pd.DataFrame
+        Preprocessed DataFrame with standardized columns.
+    """
+    db_lower = db.lower().strip()
+    
+    preprocessors = {
+        "pubmed": preprocess_pubmed,
+        "medline": preprocess_pubmed,
+        "lens": preprocess_lens,
+        "lens.org": preprocess_lens,
+        "dimensions": preprocess_dimensions,
+    }
+    
+    if db_lower in preprocessors:
+        df = preprocessors[db_lower](df, separator=separator, **kwargs)
+    else:
+        # For scopus, openalex, wos - just standardize columns
+        df = standardize_columns(df)
+    
+    # Common post-processing
+    df = _common_postprocessing(df, separator)
+    
+    return df
+
+
+def _common_postprocessing(df: pd.DataFrame, separator: str = "; ") -> pd.DataFrame:
+    """Apply common postprocessing to all databases."""
+    df = df.copy()
+    
+    # Ensure Year is integer
+    if "Year" in df.columns:
+        df["Year"] = pd.to_numeric(df["Year"], errors="coerce")
+        # Remove rows with invalid years
+        df = df[df["Year"].notna() & (df["Year"] >= 1900) & (df["Year"] <= 2100)]
+        df["Year"] = df["Year"].astype(int)
+    
+    # Ensure citations is integer
+    if "Cited by" in df.columns:
+        df["Cited by"] = pd.to_numeric(df["Cited by"], errors="coerce").fillna(0).astype(int)
+    
+    # Clean empty strings
+    for col in df.columns:
+        if df[col].dtype == object:
+            df[col] = df[col].replace({"": np.nan, " ": np.nan})
+    
+    return df
+
+
+# =============================================================================
+# DATABASE FORMAT DETECTION
+# =============================================================================
+
+def detect_database(df: pd.DataFrame) -> str:
+    """
+    Attempt to detect the source database from column names.
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Input DataFrame.
+        
+    Returns
+    -------
+    str
+        Detected database name or 'unknown'.
+    """
+    cols = set(df.columns)
+    cols_lower = {c.lower() for c in cols}
+    
+    # Scopus indicators
+    scopus_indicators = {"EID", "Cited by", "Source title", "Author Keywords"}
+    if len(scopus_indicators & cols) >= 3:
+        return "scopus"
+    
+    # OpenAlex indicators
+    openalex_indicators = {"id", "doi", "display_name", "publication_year", "cited_by_count"}
+    if len(openalex_indicators & cols_lower) >= 3:
+        return "openalex"
+    
+    # PubMed indicators
+    pubmed_indicators = {"PMID", "MeSH Terms", "Journal", "ArticleTitle"}
+    if len(pubmed_indicators & cols) >= 2:
+        return "pubmed"
+    
+    # Lens indicators
+    lens_indicators = {"Lens ID", "Scholarly Citations", "Fields of Study"}
+    if len(lens_indicators & cols) >= 2:
+        return "lens"
+    
+    # Dimensions indicators
+    dimensions_indicators = {"Publication ID", "Times cited", "FOR (ANZSRC 2020)"}
+    if len(dimensions_indicators & cols) >= 2:
+        return "dimensions"
+    
+    # WoS indicators
+    wos_indicators = {"UT", "WC", "SC", "TC"}
+    if len(wos_indicators & cols) >= 2:
+        return "wos"
+    
+    return "unknown"
+
+
+# =============================================================================
+# TIME SERIES & GROWTH MODELS (integrated from utilsbib_modules.time_series)
+# =============================================================================
+
+# -*- coding: utf-8 -*-
+"""
+Time Series Analysis Utilities.
+
+This module provides functions for temporal analysis of bibliometric data:
+- Publication trends
+- Citation evolution
+- Growth rate analysis
+- Trend prediction
+"""
+
+
+from typing import Any, Dict, List, Optional
+
+import numpy as np
+import pandas as pd
+
+
+def compute_publication_trend(
+    df: pd.DataFrame,
+    year_col: str = "Year",
+    min_year: Optional[int] = None,
+    max_year: Optional[int] = None,
+) -> pd.DataFrame:
+    """
+    Compute publication counts by year.
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Bibliographic data.
+    year_col : str
+        Column containing publication years.
+    min_year : int, optional
+        Start year (inclusive).
+    max_year : int, optional
+        End year (inclusive).
+        
+    Returns
+    -------
+    pd.DataFrame
+        Year, Count, Cumulative, Growth Rate columns.
+    """
+    years = pd.to_numeric(df[year_col], errors="coerce").dropna().astype(int)
+    
+    if min_year is None:
+        min_year = years.min()
+    if max_year is None:
+        max_year = years.max()
+    
+    # Count by year
+    counts = years.value_counts().reindex(
+        range(min_year, max_year + 1), fill_value=0
+    ).sort_index()
+    
+    result = pd.DataFrame({
+        "Year": counts.index,
+        "Count": counts.values,
+    })
+    
+    # Add cumulative
+    result["Cumulative"] = result["Count"].cumsum()
+    
+    # Add growth rate
+    result["Growth Rate (%)"] = result["Count"].pct_change() * 100
+    result["Growth Rate (%)"] = result["Growth Rate (%)"].round(2)
+    
+    return result
+
+
+def compute_citation_evolution(
+    df: pd.DataFrame,
+    year_col: str = "Year",
+    cite_col: str = "Cited by",
+    min_year: Optional[int] = None,
+    max_year: Optional[int] = None,
+) -> pd.DataFrame:
+    """
+    Compute citation metrics by publication year.
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Bibliographic data.
+    year_col : str
+        Column containing publication years.
+    cite_col : str
+        Column containing citation counts.
+    min_year : int, optional
+        Start year (inclusive).
+    max_year : int, optional
+        End year (inclusive).
+        
+    Returns
+    -------
+    pd.DataFrame
+        Year, Total Citations, Mean Citations, Median Citations, etc.
+    """
+    work = df.copy()
+    work[year_col] = pd.to_numeric(work[year_col], errors="coerce")
+    work[cite_col] = pd.to_numeric(work[cite_col], errors="coerce").fillna(0)
+    
+    work = work.dropna(subset=[year_col])
+    work[year_col] = work[year_col].astype(int)
+    
+    if min_year:
+        work = work[work[year_col] >= min_year]
+    if max_year:
+        work = work[work[year_col] <= max_year]
+    
+    # Group by year
+    grouped = work.groupby(year_col)[cite_col].agg([
+        ("Documents", "count"),
+        ("Total Citations", "sum"),
+        ("Mean Citations", "mean"),
+        ("Median Citations", "median"),
+        ("Max Citations", "max"),
+    ]).reset_index()
+    
+    grouped = grouped.rename(columns={year_col: "Year"})
+    grouped["Mean Citations"] = grouped["Mean Citations"].round(2)
+    
+    return grouped
+
+
+def compute_growth_rates(
+    trend_df: pd.DataFrame,
+    count_col: str = "Count",
+    year_col: str = "Year",
+) -> pd.DataFrame:
+    """
+    Compute various growth rate metrics.
+    
+    Parameters
+    ----------
+    trend_df : pd.DataFrame
+        Publication trend DataFrame.
+    count_col : str
+        Column with counts.
+    year_col : str
+        Column with years.
+        
+    Returns
+    -------
+    pd.DataFrame
+        Growth metrics including CAGR, average growth, etc.
+    """
+    if len(trend_df) < 2:
+        return pd.DataFrame()
+    
+    counts = trend_df[count_col].values
+    years = trend_df[year_col].values
+    
+    # Year-over-year growth
+    yoy_growth = np.diff(counts) / np.where(counts[:-1] == 0, 1, counts[:-1]) * 100
+    
+    # CAGR (Compound Annual Growth Rate)
+    n_years = len(years) - 1
+    if counts[0] > 0 and counts[-1] > 0 and n_years > 0:
+        cagr = (np.power(counts[-1] / counts[0], 1 / n_years) - 1) * 100
+    else:
+        cagr = np.nan
+    
+    # Moving average growth
+    window = min(3, len(counts))
+    ma = pd.Series(counts).rolling(window).mean()
+    ma_growth = ma.pct_change() * 100
+    
+    result = pd.DataFrame({
+        "Year": years[1:],
+        "YoY Growth (%)": yoy_growth.round(2),
+        "3-Year MA": ma.values[1:],
+        "MA Growth (%)": ma_growth.values[1:],
+    })
+    
+    # Add summary row
+    summary = pd.DataFrame([{
+        "Year": "Summary",
+        "YoY Growth (%)": np.nanmean(yoy_growth),
+        "3-Year MA": np.nan,
+        "MA Growth (%)": np.nanmean(ma_growth.dropna()),
+        "CAGR (%)": cagr,
+    }])
+    
+    result = pd.concat([result, summary], ignore_index=True)
+    
+    return result
+
+
+def predict_future_publications(
+    trend_df: pd.DataFrame,
+    n_years: int = 5,
+    method: str = "linear",
+    count_col: str = "Count",
+    year_col: str = "Year",
+) -> pd.DataFrame:
+    """
+    Predict future publication counts.
+    
+    Parameters
+    ----------
+    trend_df : pd.DataFrame
+        Historical publication trend.
+    n_years : int
+        Number of years to predict.
+    method : str
+        Prediction method: 'linear', 'exponential', 'polynomial'.
+    count_col : str
+        Column with counts.
+    year_col : str
+        Column with years.
+        
+    Returns
+    -------
+    pd.DataFrame
+        Predictions with confidence intervals.
+    """
+    years = trend_df[year_col].values
+    counts = trend_df[count_col].values
+    
+    # Fit model
+    if method == "linear":
+        coeffs = np.polyfit(years, counts, 1)
+        predict_func = np.poly1d(coeffs)
+    elif method == "exponential":
+        # Log-linear regression
+        log_counts = np.log(counts + 1)
+        coeffs = np.polyfit(years, log_counts, 1)
+        predict_func = lambda x: np.exp(np.poly1d(coeffs)(x)) - 1
+    elif method == "polynomial":
+        coeffs = np.polyfit(years, counts, 2)
+        predict_func = np.poly1d(coeffs)
+    else:
+        raise ValueError(f"Unknown method: {method}")
+    
+    # Generate predictions
+    last_year = int(years[-1])
+    future_years = np.arange(last_year + 1, last_year + n_years + 1)
+    predictions = predict_func(future_years)
+    
+    # Ensure non-negative
+    predictions = np.maximum(predictions, 0)
+    
+    # Simple confidence interval (based on historical variance)
+    residuals = counts - predict_func(years)
+    std_err = np.std(residuals)
+    
+    result = pd.DataFrame({
+        "Year": future_years,
+        "Predicted": predictions.round(0).astype(int),
+        "Lower 95%": np.maximum(predictions - 1.96 * std_err, 0).round(0).astype(int),
+        "Upper 95%": (predictions + 1.96 * std_err).round(0).astype(int),
+    })
+    
+    return result
+
+
+def compute_doubling_time(
+    trend_df: pd.DataFrame,
+    count_col: str = "Count",
+    year_col: str = "Year",
+) -> float:
+    """
+    Compute the doubling time of publications.
+    
+    Parameters
+    ----------
+    trend_df : pd.DataFrame
+        Publication trend DataFrame.
+    count_col : str
+        Column with counts.
+    year_col : str
+        Column with years.
+        
+    Returns
+    -------
+    float
+        Estimated doubling time in years.
+    """
+    cumulative = trend_df[count_col].cumsum().values
+    years = trend_df[year_col].values
+    
+    if cumulative[-1] <= cumulative[0] * 2:
+        return np.inf  # Hasn't doubled yet
+    
+    # Find when it doubled
+    target = cumulative[0] * 2
+    for i, cum in enumerate(cumulative):
+        if cum >= target:
+            if i == 0:
+                return 0
+            # Interpolate
+            frac = (target - cumulative[i-1]) / (cum - cumulative[i-1])
+            return (years[i] - years[i-1]) * frac + (years[i-1] - years[0])
+    
+    return np.inf
+
+
+def compute_half_life(
+    df: pd.DataFrame,
+    year_col: str = "Year",
+    cite_col: str = "Cited by",
+    current_year: Optional[int] = None,
+) -> float:
+    """
+    Compute the citation half-life (median age of cited papers).
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Bibliographic data.
+    year_col : str
+        Column containing publication years.
+    cite_col : str
+        Column containing citation counts.
+    current_year : int, optional
+        Reference year. Defaults to max year in data.
+        
+    Returns
+    -------
+    float
+        Citation half-life in years.
+    """
+    work = df.copy()
+    work[year_col] = pd.to_numeric(work[year_col], errors="coerce")
+    work[cite_col] = pd.to_numeric(work[cite_col], errors="coerce").fillna(0)
+    work = work.dropna(subset=[year_col])
+    
+    if current_year is None:
+        current_year = int(work[year_col].max())
+    
+    work["Age"] = current_year - work[year_col].astype(int)
+    
+    # Weight ages by citations
+    total_cites = work[cite_col].sum()
+    if total_cites == 0:
+        return np.nan
+    
+    # Find median age (weighted)
+    work = work.sort_values("Age")
+    work["Cumulative Citations"] = work[cite_col].cumsum()
+    
+    half_total = total_cites / 2
+    
+    for _, row in work.iterrows():
+        if row["Cumulative Citations"] >= half_total:
+            return row["Age"]
+    
+    return work["Age"].max()
+
+
+def detect_trend_changes(
+    trend_df: pd.DataFrame,
+    count_col: str = "Count",
+    year_col: str = "Year",
+    sensitivity: float = 1.5,
+) -> List[Dict[str, Any]]:
+    """
+    Detect significant changes in publication trends.
+    
+    Parameters
+    ----------
+    trend_df : pd.DataFrame
+        Publication trend DataFrame.
+    count_col : str
+        Column with counts.
+    year_col : str
+        Column with years.
+    sensitivity : float
+        Standard deviations for significance threshold.
+        
+    Returns
+    -------
+    list
+        List of change points with year and type (increase/decrease).
+    """
+    years = trend_df[year_col].values
+    counts = trend_df[count_col].values
+    
+    if len(counts) < 3:
+        return []
+    
+    # Compute year-over-year changes
+    changes = np.diff(counts)
+    
+    # Compute thresholds
+    mean_change = np.mean(changes)
+    std_change = np.std(changes)
+    
+    if std_change == 0:
+        return []
+    
+    # Detect significant changes
+    change_points = []
+    for i, change in enumerate(changes):
+        z_score = (change - mean_change) / std_change
+        
+        if abs(z_score) > sensitivity:
+            change_points.append({
+                "Year": int(years[i + 1]),
+                "Type": "increase" if change > 0 else "decrease",
+                "Magnitude": abs(change),
+                "Z-Score": round(z_score, 2),
+            })
+    
+    return change_points
+
+
+# =============================================================================
+# GROWTH MODEL FITTING
+# =============================================================================
+
+def fit_growth_model(
+    df: pd.DataFrame,
+    year_col: str = "Year",
+    model_type: str = "auto",
+    forecast_years: int = 5,
+    min_year: Optional[int] = None,
+) -> Dict[str, Any]:
+    """
+    Fit bibliometric growth models to publication data.
+    
+    Fits exponential, logistic, power law, or linear models to annual publication
+    counts and provides forecasts. Models are selected based on AIC if 'auto' is chosen.
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Bibliographic dataframe with year column.
+    year_col : str
+        Column containing publication years.
+    model_type : str
+        Model type: "exponential", "logistic", "power", "linear", "auto".
+        If "auto", selects best model based on AIC.
+    forecast_years : int
+        Number of years to forecast beyond the data.
+    min_year : int, optional
+        Minimum year to include. If None, uses earliest year >= 1900.
+    
+    Returns
+    -------
+    dict
+        Dictionary containing:
+        - model_type: str - The fitted model type
+        - parameters: dict - Model parameters
+        - r_squared: float - Coefficient of determination
+        - aic: float - Akaike Information Criterion
+        - bic: float - Bayesian Information Criterion
+        - growth_rate: float - Annual growth rate
+        - doubling_time: float or None - Time to double (for exponential/logistic)
+        - prediction_df: pd.DataFrame - Historical + forecast data
+        - comparison_df: pd.DataFrame - Comparison of all models (if auto)
+    """
+    from scipy.optimize import curve_fit
+    
+    # Count papers per year
+    years_series = pd.to_numeric(df[year_col], errors="coerce").dropna().astype(int)
+    year_counts = years_series.value_counts().sort_index()
+    years = np.array(year_counts.index)
+    counts = np.array(year_counts.values)
+    
+    # Filter to reasonable years
+    if min_year is None:
+        min_year = 1900
+    mask = years >= min_year
+    years = years[mask]
+    counts = counts[mask]
+    
+    if len(years) < 4:
+        raise ValueError("Not enough data points for growth model fitting (need at least 4 years)")
+    
+    # Normalize years for fitting (helps numerical stability)
+    year_offset = years.min()
+    t = years - year_offset
+    
+    # Define growth models
+    def exponential(t, a, b):
+        """Exponential: y = a * exp(b * t)"""
+        return a * np.exp(b * t)
+    
+    def logistic(t, L, k, t0):
+        """Logistic: y = L / (1 + exp(-k * (t - t0)))"""
+        return L / (1 + np.exp(-k * (t - t0)))
+    
+    def power_law(t, a, b):
+        """Power law: y = a * (t + 1)^b"""
+        return a * (t + 1) ** b
+    
+    def linear(t, a, b):
+        """Linear: y = a * t + b"""
+        return a * t + b
+    
+    # Model specifications: (function, initial_params, bounds)
+    models = {
+        "exponential": (
+            exponential, 
+            [max(1, counts[0]), 0.05], 
+            [(0.001, None), (0.001, 0.5)]
+        ),
+        "logistic": (
+            logistic, 
+            [max(counts) * 2, 0.1, len(t) / 2], 
+            [(max(counts), max(counts) * 10), (0.01, 1), (0, len(t) * 2)]
+        ),
+        "power": (
+            power_law, 
+            [max(1, counts[0]), 1.5], 
+            [(0.001, None), (0.1, 5)]
+        ),
+        "linear": (
+            linear, 
+            [np.mean(np.diff(counts)) if len(counts) > 1 else 1, counts[0]], 
+            [(-np.inf, np.inf), (-np.inf, np.inf)]
+        ),
+    }
+    
+    def _fit_model(name: str) -> Optional[Dict]:
+        """Fit a single model and return results."""
+        func, p0, bounds_list = models[name]
+        bounds_lower = [b[0] if b[0] is not None else -np.inf for b in bounds_list]
+        bounds_upper = [b[1] if b[1] is not None else np.inf for b in bounds_list]
+        
+        try:
+            popt, pcov = curve_fit(
+                func, t, counts, 
+                p0=p0, 
+                bounds=(bounds_lower, bounds_upper), 
+                maxfev=10000
+            )
+            fitted = func(t, *popt)
+            residuals = counts - fitted
+            
+            # Metrics
+            ss_res = np.sum(residuals ** 2)
+            ss_tot = np.sum((counts - np.mean(counts)) ** 2)
+            r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
+            
+            n = len(counts)
+            k = len(popt)
+            aic = n * np.log(ss_res / n + 1e-10) + 2 * k
+            bic = n * np.log(ss_res / n + 1e-10) + k * np.log(n)
+            rmse = np.sqrt(ss_res / n)
+            
+            return {
+                "name": name,
+                "popt": popt,
+                "fitted": fitted,
+                "residuals": residuals,
+                "r_squared": r_squared,
+                "aic": aic,
+                "bic": bic,
+                "rmse": rmse,
+            }
+        except Exception:
+            return None
+    
+    # Fit all models for comparison
+    all_fits = {}
+    for name in models.keys():
+        result = _fit_model(name)
+        if result is not None:
+            all_fits[name] = result
+    
+    if not all_fits:
+        raise ValueError("Could not fit any growth model to the data")
+    
+    # Select model
+    if model_type == "auto":
+        # Select by lowest AIC
+        selected = min(all_fits.values(), key=lambda x: x["aic"])
+        model_type = selected["name"]
+    else:
+        if model_type not in all_fits:
+            # Fallback to linear if requested model failed
+            model_type = "linear" if "linear" in all_fits else list(all_fits.keys())[0]
+        selected = all_fits[model_type]
+    
+    # Extract parameters with meaningful names
+    func, _, _ = models[model_type]
+    popt = selected["popt"]
+    
+    param_names = {
+        "exponential": ["initial_value", "growth_rate"],
+        "logistic": ["carrying_capacity", "growth_rate", "midpoint_year"],
+        "power": ["coefficient", "exponent"],
+        "linear": ["slope", "intercept"],
+    }
+    parameters = dict(zip(param_names[model_type], popt))
+    
+    # Adjust midpoint year for logistic to actual year
+    if model_type == "logistic":
+        parameters["midpoint_year"] = parameters["midpoint_year"] + year_offset
+    
+    # Calculate growth rate and doubling time
+    if model_type == "exponential":
+        growth_rate = popt[1]  # b parameter
+        doubling_time = np.log(2) / growth_rate if growth_rate > 0 else None
+    elif model_type == "logistic":
+        growth_rate = popt[1]  # k parameter
+        doubling_time = np.log(2) / growth_rate if growth_rate > 0 else None
+    elif model_type == "linear":
+        # Average growth rate relative to mean
+        growth_rate = popt[0] / np.mean(counts) if np.mean(counts) > 0 else 0
+        doubling_time = None
+    elif model_type == "power":
+        growth_rate = popt[1]  # exponent
+        doubling_time = None
+    else:
+        growth_rate = 0
+        doubling_time = None
+    
+    # Generate predictions (historical + forecast)
+    future_t = np.arange(t[-1] + 1, t[-1] + 1 + forecast_years)
+    future_years = future_t + year_offset
+    future_fitted = func(future_t, *popt)
+    
+    # Ensure non-negative predictions
+    future_fitted = np.maximum(future_fitted, 0)
+    
+    prediction_df = pd.DataFrame({
+        "Year": np.concatenate([years, future_years]),
+        "Observed": np.concatenate([counts, [np.nan] * forecast_years]),
+        "Fitted": np.concatenate([selected["fitted"], future_fitted]),
+        "Is Forecast": [False] * len(years) + [True] * forecast_years,
+    })
+    prediction_df["Fitted"] = prediction_df["Fitted"].round(1)
+    
+    # Model comparison dataframe
+    comparison_df = pd.DataFrame([
+        {
+            "Model": name,
+            "R²": round(fit["r_squared"], 4),
+            "AIC": round(fit["aic"], 2),
+            "BIC": round(fit["bic"], 2),
+            "RMSE": round(fit["rmse"], 2),
+        }
+        for name, fit in all_fits.items()
+    ]).sort_values("AIC")
+    
+    return {
+        "model_type": model_type,
+        "parameters": parameters,
+        "r_squared": selected["r_squared"],
+        "aic": selected["aic"],
+        "bic": selected["bic"],
+        "rmse": selected["rmse"],
+        "growth_rate": growth_rate,
+        "doubling_time": doubling_time,
+        "fitted_values": selected["fitted"],
+        "residuals": selected["residuals"],
+        "prediction_df": prediction_df,
+        "comparison_df": comparison_df,
+        "years": years,
+        "counts": counts,
+    }
+
+
+def fit_life_cycle_model(
+    df: pd.DataFrame,
+    year_col: str = "Year",
+    forecast_years: int = 10,
+) -> Dict[str, Any]:
+    """
+    Fit a life cycle (logistic S-curve) model to cumulative publication data.
+    
+    This is useful for analyzing the maturity of a research field. The logistic
+    model estimates when a field will reach saturation.
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Bibliographic dataframe.
+    year_col : str
+        Column containing publication years.
+    forecast_years : int
+        Years to forecast.
+    
+    Returns
+    -------
+    dict
+        Dictionary containing:
+        - saturation_k: float - Carrying capacity (max cumulative pubs)
+        - peak_year: float - Inflection point year (50% of saturation)
+        - growth_rate: float - Intrinsic growth rate
+        - growth_duration: float - Years from 10% to 90% saturation
+        - current_phase: str - "emerging", "growth", "maturity", or "saturation"
+        - progress: float - Current progress to saturation (0-1)
+        - r_squared: float - Model fit quality
+        - prediction_df: pd.DataFrame - Historical + forecast
+    """
+    from scipy.optimize import curve_fit
+    
+    # Count papers per year
+    years_series = pd.to_numeric(df[year_col], errors="coerce").dropna().astype(int)
+    year_counts = years_series.value_counts().sort_index()
+    years = np.array(year_counts.index)
+    counts = np.array(year_counts.values)
+    
+    # Filter to reasonable years
+    mask = years >= 1900
+    years = years[mask]
+    counts = counts[mask]
+    
+    # Compute cumulative counts
+    cumulative = np.cumsum(counts)
+    
+    if len(years) < 4:
+        raise ValueError("Not enough data points for life cycle analysis")
+    
+    # Normalize years
+    year_offset = years.min()
+    t = years - year_offset
+    
+    # Logistic model for cumulative data
+    def logistic_cumulative(t, K, r, Tm):
+        """Cumulative logistic: y = K / (1 + exp(-r * (t - Tm)))"""
+        return K / (1 + np.exp(-r * (t - Tm)))
+    
+    # Initial estimates
+    K0 = cumulative[-1] * 2  # Carrying capacity guess
+    r0 = 0.2  # Growth rate guess
+    Tm0 = t[len(t) // 2]  # Midpoint guess
+    
+    try:
+        popt, pcov = curve_fit(
+            logistic_cumulative, t, cumulative,
+            p0=[K0, r0, Tm0],
+            bounds=([cumulative[-1], 0.01, 0], [cumulative[-1] * 20, 2, len(t) * 3]),
+            maxfev=10000
+        )
+    except Exception as e:
+        raise ValueError(f"Could not fit life cycle model: {e}") from e
+    
+    K, r, Tm = popt
+    
+    # Fitted values
+    fitted = logistic_cumulative(t, K, r, Tm)
+    residuals = cumulative - fitted
+    
+    # Metrics
+    ss_res = np.sum(residuals ** 2)
+    ss_tot = np.sum((cumulative - np.mean(cumulative)) ** 2)
+    r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
+    
+    # Growth duration (time from 10% to 90% of K)
+    # At 10%: t_10 = Tm - ln(9)/r
+    # At 90%: t_90 = Tm + ln(9)/r
+    growth_duration = 2 * np.log(9) / r
+    
+    # Current progress
+    progress = cumulative[-1] / K
+    
+    # Determine phase
+    if progress < 0.1:
+        current_phase = "emerging"
+    elif progress < 0.5:
+        current_phase = "growth"
+    elif progress < 0.9:
+        current_phase = "maturity"
+    else:
+        current_phase = "saturation"
+    
+    # Peak annual production (derivative at inflection point)
+    peak_annual = K * r / 4
+    
+    # Forecast
+    future_t = np.arange(t[-1] + 1, t[-1] + 1 + forecast_years)
+    future_years = future_t + year_offset
+    future_cumulative = logistic_cumulative(future_t, K, r, Tm)
+    
+    # Convert cumulative forecast to annual
+    all_cumulative = np.concatenate([fitted, future_cumulative])
+    all_annual = np.diff(np.concatenate([[0], all_cumulative]))
+    
+    prediction_df = pd.DataFrame({
+        "Year": np.concatenate([years, future_years]),
+        "Observed": np.concatenate([counts, [np.nan] * forecast_years]),
+        "Observed Cumulative": np.concatenate([cumulative, [np.nan] * forecast_years]),
+        "Fitted Annual": all_annual,
+        "Fitted Cumulative": np.concatenate([fitted, future_cumulative]),
+        "Is Forecast": [False] * len(years) + [True] * forecast_years,
+    })
+    
+    return {
+        "saturation_k": K,
+        "peak_year": Tm + year_offset,
+        "growth_rate": r,
+        "growth_duration": growth_duration,
+        "peak_annual": peak_annual,
+        "current_phase": current_phase,
+        "progress": progress,
+        "r_squared": r_squared,
+        "prediction_df": prediction_df,
+        "years": years,
+        "cumulative": cumulative,
+        "fitted_cumulative": fitted,
+    }
+
+
+# =============================================================================
+# PERMUTATION INFERENCE (integrated from utilsbib_modules.permutation)
+# =============================================================================
+
+# -*- coding: utf-8 -*-
+"""
+biblium.utilsbib_modules.permutation
+====================================
+
+Permutation-based inference for bibliometric group analyses with overlapping
+groups and/or multi-valued entities.
+
+Motivation
+----------
+When groups are non-disjoint (a document can belong to several groups,
+e.g. thematic clusters defined by keywords) or the associated entity is
+multi-valued (authors, keywords, countries), the classical Pearson
+chi-squared test of independence is biased. The independence-of-
+observations assumption is violated, marginals are inflated, and asymptotic
+p-values are anti-conservative (too small).
+
+This module provides a permutation framework that:
+
+1. Holds the document x entity indicator matrix fixed.
+2. Permutes the document x group indicator matrix row-wise.
+3. Recomputes the chosen test statistic on each permuted contingency table.
+4. Reports p = (1 + #{T_b >= T_0}) / (1 + B).
+
+Row-wise permutation of the group matrix preserves
+(i) the marginal sizes of each group,
+(ii) the marginal entity frequencies,
+(iii) the overlap structure of groups across documents, and
+(iv) the multi-valued structure of the entity --
+breaking only the document-level association between group membership and
+entity occurrence, which is exactly the null hypothesis of interest.
+
+Public components
+-----------------
+PermutationResult
+    Dataclass holding the observed statistic, the null distribution, the
+    p-value(s), a Clopper-Pearson 95% CI for the p-value, and bookkeeping.
+
+permutation_test
+    Core engine. Takes group and entity indicator matrices and a
+    statistic callable.
+
+Test statistics:
+    chi2_statistic, cramers_v_statistic, total_inertia_statistic,
+    dimension_inertias_statistic, standardized_residuals_statistic.
+
+adjust_p_values
+    Multiple-testing correction (Benjamini-Hochberg, Holm, Bonferroni).
+
+adaptive_n_permutations
+    Pick B from a target time budget via a brief micro-benchmark.
+
+is_partition
+    Detect a disjoint group structure (and warn the caller that asymptotic
+    chi-squared is sufficient in that case).
+
+Author: Lan Umek
+Version: 2.16.0
+"""
+
+
+import time
+import warnings
+from dataclasses import dataclass, field
+from typing import (
+    Any,
+    Callable,
+    Literal,
+    Optional,
+    Tuple,
+    Union,
+)
+
+import numpy as np
+
+try:
+    from tqdm.auto import tqdm
+    _TQDM_AVAILABLE = True
+except ImportError:
+    _TQDM_AVAILABLE = False
+
+    def tqdm(iterable, *args, **kwargs):  # type: ignore
+        return iterable
+
+
+# =============================================================================
+# RESULT CONTAINER
+# =============================================================================
+
+
+@dataclass
+class PermutationResult:
+    """
+    Container for the result of a permutation test.
+
+    Attributes
+    ----------
+    observed : float or np.ndarray
+        The observed test statistic. Scalar for global tests
+        (``chi2``, ``cramers_v``, ``total_inertia``), vector for
+        ``dimension_inertias_statistic`` (one entry per CA dimension),
+        and matrix for ``standardized_residuals_statistic``
+        (groups x entities).
+    null_distribution : np.ndarray or None
+        Stack of statistics under the null. Shape is
+        ``(B,) + observed.shape``. ``None`` if ``return_null=False``.
+    p_value : float or np.ndarray
+        Permutation p-value(s), same shape as ``observed``.
+    p_value_ci : tuple or np.ndarray or None
+        Clopper-Pearson 95% CI for the p-value, useful as a sanity check
+        when B is small. ``None`` for vector/matrix statistics by default.
+    n_permutations : int
+        Number of permutations actually performed.
+    statistic_name : str
+        Human-readable label for the statistic (used in plots, reports).
+    alternative : str
+        ``"greater"`` (default) or ``"two-sided"``.
+    seed : int or None
+        Seed used for ``np.random.default_rng``.
+    elapsed_seconds : float
+        Wall-clock time spent in the permutation loop.
+    """
+
+    observed: Union[float, np.ndarray]
+    null_distribution: Optional[np.ndarray]
+    p_value: Union[float, np.ndarray]
+    p_value_ci: Optional[Union[Tuple[float, float], np.ndarray]] = None
+    n_permutations: int = 0
+    statistic_name: str = ""
+    alternative: str = "greater"
+    seed: Optional[int] = None
+    elapsed_seconds: float = 0.0
+    extra: dict = field(default_factory=dict)
+
+    def summary(self) -> str:
+        """Return a short human-readable summary string."""
+        if np.isscalar(self.observed):
+            obs = float(self.observed)
+            p = float(self.p_value)  # type: ignore[arg-type]
+            line = (
+                f"PermutationResult({self.statistic_name}): "
+                f"observed = {obs:.4g}, p = {p:.4g} "
+                f"(B = {self.n_permutations}, alt = {self.alternative})"
+            )
+            if isinstance(self.p_value_ci, tuple):
+                lo, hi = self.p_value_ci
+                line += f", 95% CI for p: [{lo:.4g}, {hi:.4g}]"
+            return line
+        else:
+            obs_arr = np.asarray(self.observed)
+            return (
+                f"PermutationResult({self.statistic_name}): "
+                f"observed shape {obs_arr.shape}, "
+                f"B = {self.n_permutations}, alt = {self.alternative}"
+            )
+
+
+# =============================================================================
+# DISJOINT-GROUP DETECTION
+# =============================================================================
+
+
+def is_partition(group_matrix: np.ndarray, atol: float = 1e-8) -> bool:
+    """
+    Test whether a group indicator matrix encodes a disjoint partition.
+
+    A partition has 0/1 entries and rows that sum to exactly 1, i.e.
+    each document belongs to exactly one group.
+
+    Parameters
+    ----------
+    group_matrix : np.ndarray, shape (n_docs, n_groups)
+        Binary indicator matrix.
+    atol : float, default 1e-8
+        Absolute tolerance for floating-point row sums.
+
+    Returns
+    -------
+    bool
+        True if the matrix is a disjoint partition.
+    """
+    G = np.asarray(group_matrix)
+    if G.ndim != 2:
+        return False
+    # 0/1 only
+    is_binary = np.all((np.isclose(G, 0, atol=atol)) | (np.isclose(G, 1, atol=atol)))
+    if not is_binary:
+        return False
+    row_sums = G.sum(axis=1)
+    return bool(np.all(np.isclose(row_sums, 1, atol=atol)))
+
+
+def warn_if_partition(group_matrix: np.ndarray) -> bool:
+    """
+    Warn the caller if groups are disjoint, and return that flag.
+
+    When groups are disjoint, the asymptotic chi-squared test of
+    independence is unbiased and permutation inference is computationally
+    wasteful (though not wrong).
+
+    Returns
+    -------
+    bool
+        True if groups are disjoint.
+    """
+    if is_partition(group_matrix):
+        warnings.warn(
+            "Groups appear to be disjoint (each document belongs to exactly "
+            "one group). The asymptotic chi-squared test is unbiased in this "
+            "case; a permutation test is unnecessary unless you want exact "
+            "small-sample inference.",
+            UserWarning,
+            stacklevel=2,
+        )
+        return True
+    return False
+
+
+# =============================================================================
+# ADAPTIVE NUMBER OF PERMUTATIONS
+# =============================================================================
+
+
+def adaptive_n_permutations(
+    group_matrix: np.ndarray,
+    entity_matrix: np.ndarray,
+    statistic: Callable[[np.ndarray], Any],
+    target_seconds: float = 5.0,
+    n_min: int = 999,
+    n_max: int = 99_999,
+    rng: Optional[np.random.Generator] = None,
+) -> int:
+    """
+    Pick a number of permutations matching a target wall-clock budget.
+
+    Runs a brief micro-benchmark (``n_probe`` permutations) to estimate the
+    per-permutation cost, then chooses B so that B * cost ~= target_seconds,
+    clipped to ``[n_min, n_max]``.
+
+    Parameters
+    ----------
+    group_matrix, entity_matrix : np.ndarray
+        Same matrices that will be used in the actual test.
+    statistic : callable
+        Same statistic that will be used in the actual test.
+    target_seconds : float, default 5.0
+        Wall-clock budget for the permutation loop.
+    n_min : int, default 999
+        Minimum B (gives p-value resolution down to ~1e-3).
+    n_max : int, default 99_999
+        Hard upper bound (gives p-value resolution down to ~1e-5).
+    rng : np.random.Generator, optional
+        Source of randomness; ``np.random.default_rng()`` if None.
+
+    Returns
+    -------
+    int
+        Recommended number of permutations.
+    """
+    if rng is None:
+        rng = np.random.default_rng()
+
+    G = np.asarray(group_matrix)
+    E = np.asarray(entity_matrix)
+    n_docs = G.shape[0]
+    n_probe = 5
+
+    t0 = time.perf_counter()
+    for _ in range(n_probe):
+        perm = rng.permutation(n_docs)
+        T_b = G[perm].T @ E
+        _ = statistic(T_b)
+    elapsed = time.perf_counter() - t0
+    if elapsed <= 0:
+        return n_max
+
+    per_perm = elapsed / n_probe
+    B = int(target_seconds / per_perm)
+    B = max(n_min, min(n_max, B))
+    # Use 2 * 10**k - 1 conventions are nice but not essential; just round to a
+    # value of the form 9, 99, 999, 9999, 99999 below the budget.
+    nice_levels = [999, 1999, 4999, 9999, 19_999, 49_999, 99_999]
+    chosen = nice_levels[0]
+    for level in nice_levels:
+        if level <= B:
+            chosen = level
+        else:
+            break
+    return max(n_min, min(n_max, chosen))
+
+
+# =============================================================================
+# TEST STATISTICS
+# =============================================================================
+
+
+def _expected_under_independence(table: np.ndarray) -> np.ndarray:
+    """Compute the expected-counts table under row-column independence."""
+    table = np.asarray(table, dtype=float)
+    total = table.sum()
+    if total <= 0:
+        return np.zeros_like(table)
+    row = table.sum(axis=1, keepdims=True)
+    col = table.sum(axis=0, keepdims=True)
+    return (row @ col) / total
+
+
+def chi2_statistic(table: np.ndarray) -> float:
+    """
+    Pearson chi-squared statistic for an n_groups x n_entities table.
+
+    Returns 0 for empty / degenerate tables. Cells with expected count 0
+    are skipped (their contribution is undefined and would be NaN).
+    """
+    O = np.asarray(table, dtype=float)
+    E = _expected_under_independence(O)
+    mask = E > 0
+    if not np.any(mask):
+        return 0.0
+    diff = O - E
+    return float(np.sum(diff[mask] ** 2 / E[mask]))
+
+
+def cramers_v_statistic(table: np.ndarray) -> float:
+    """
+    Cramer's V effect-size statistic.
+
+    V = sqrt(chi^2 / (n * (min(r, c) - 1))). Bounded in [0, 1] and
+    asymptotically invariant to sample size, which makes it a more
+    interpretable test statistic across studies than raw chi^2.
+    """
+    O = np.asarray(table, dtype=float)
+    n = O.sum()
+    r, c = O.shape
+    k = min(r, c) - 1
+    if n <= 0 or k <= 0:
+        return 0.0
+    chi2 = chi2_statistic(O)
+    return float(np.sqrt(chi2 / (n * k)))
+
+
+def total_inertia_statistic(table: np.ndarray) -> float:
+    """
+    Total inertia of a contingency table for correspondence analysis.
+
+    Equal to chi^2 / n. Total inertia is the sum of the squared singular
+    values of the standardised residual matrix, hence a natural global
+    statistic for CA.
+    """
+    O = np.asarray(table, dtype=float)
+    n = O.sum()
+    if n <= 0:
+        return 0.0
+    return chi2_statistic(O) / n
+
+
+def _standardized_residual_matrix(table: np.ndarray) -> np.ndarray:
+    """
+    Return the matrix of standardised Pearson residuals.
+
+    Z_ij = (O_ij - E_ij) / sqrt(E_ij * (1 - p_i.) * (1 - p_.j))
+    where p_i. = row_i / n and p_.j = col_j / n. Standardised residuals
+    are approximately N(0, 1) under independence in the disjoint case;
+    here they are used purely as a centred and scaled cell-level
+    statistic for permutation inference.
+    """
+    O = np.asarray(table, dtype=float)
+    n = O.sum()
+    if n <= 0:
+        return np.zeros_like(O)
+    row = O.sum(axis=1, keepdims=True)
+    col = O.sum(axis=0, keepdims=True)
+    E = (row @ col) / n
+    p_row = row / n
+    p_col = col / n
+    var = E * (1 - p_row) * (1 - p_col)
+    out = np.zeros_like(O)
+    mask = var > 0
+    out[mask] = (O[mask] - E[mask]) / np.sqrt(var[mask])
+    return out
+
+
+def standardized_residuals_statistic(table: np.ndarray) -> np.ndarray:
+    """Return cell-level standardised residuals as a matrix statistic."""
+    return _standardized_residual_matrix(table)
+
+
+def dimension_inertias_statistic(
+    table: np.ndarray,
+    n_dimensions: Optional[int] = None,
+) -> np.ndarray:
+    """
+    Per-dimension inertias from correspondence analysis (squared SVs).
+
+    Lets the caller test how many CA dimensions are individually
+    significant: dimension k is "real" if its inertia exceeds what is
+    typically seen under permutation.
+
+    Parameters
+    ----------
+    table : np.ndarray
+        Contingency table (groups x entities).
+    n_dimensions : int, optional
+        Number of leading dimensions to keep. If None, returns
+        min(r-1, c-1) values (the maximal CA rank).
+
+    Returns
+    -------
+    np.ndarray
+        Vector of length ``n_dimensions`` with eigenvalues (squared
+        singular values of the standardised residual matrix divided by n).
+    """
+    O = np.asarray(table, dtype=float)
+    n = O.sum()
+    r, c = O.shape
+    max_dim = max(min(r, c) - 1, 0)
+    if n_dimensions is None:
+        n_dimensions = max_dim
+    n_dimensions = int(min(n_dimensions, max_dim))
+    if n <= 0 or n_dimensions <= 0:
+        return np.zeros(max(n_dimensions, 0))
+
+    row = O.sum(axis=1, keepdims=True)
+    col = O.sum(axis=0, keepdims=True)
+    E = (row @ col) / n
+    with np.errstate(divide="ignore", invalid="ignore"):
+        S = np.where(E > 0, (O - E) / np.sqrt(E * n), 0.0)
+    # Singular values of S; eigenvalues of CA = sigma^2.
+    try:
+        sv = np.linalg.svd(S, compute_uv=False)
+    except np.linalg.LinAlgError:
+        return np.zeros(n_dimensions)
+    eig = sv ** 2
+    out = np.zeros(n_dimensions)
+    out[: min(n_dimensions, len(eig))] = eig[:n_dimensions]
+    return out
+
+
+# =============================================================================
+# MULTIPLE-TESTING CORRECTION
+# =============================================================================
+
+
+def adjust_p_values(
+    p_values: np.ndarray,
+    method: Literal["bh", "holm", "bonferroni", "none"] = "bh",
+) -> np.ndarray:
+    """
+    Adjust a vector or matrix of p-values for multiple testing.
+
+    Parameters
+    ----------
+    p_values : np.ndarray
+        Raw p-values.
+    method : {"bh", "holm", "bonferroni", "none"}, default "bh"
+        - "bh" : Benjamini-Hochberg FDR control.
+        - "holm" : Holm step-down FWER control.
+        - "bonferroni" : Bonferroni FWER control (most conservative).
+        - "none" : pass through.
+
+    Returns
+    -------
+    np.ndarray
+        Adjusted p-values, same shape as ``p_values``, clipped to [0, 1].
+    """
+    p = np.asarray(p_values, dtype=float)
+    shape = p.shape
+    flat = p.flatten()
+    m = flat.size
+    if method == "none" or m == 0:
+        return p.copy()
+
+    if method == "bonferroni":
+        return np.clip(flat * m, 0.0, 1.0).reshape(shape)
+
+    order = np.argsort(flat, kind="mergesort")
+    ordered = flat[order]
+
+    if method == "holm":
+        adjusted = np.empty(m)
+        running_max = 0.0
+        for i in range(m):
+            val = (m - i) * ordered[i]
+            running_max = max(running_max, val)
+            adjusted[i] = min(running_max, 1.0)
+        out = np.empty(m)
+        out[order] = adjusted
+        return out.reshape(shape)
+
+    if method == "bh":
+        adjusted = np.empty(m)
+        running_min = 1.0
+        for i in reversed(range(m)):
+            val = ordered[i] * m / (i + 1)
+            running_min = min(running_min, val)
+            adjusted[i] = running_min
+        adjusted = np.clip(adjusted, 0.0, 1.0)
+        out = np.empty(m)
+        out[order] = adjusted
+        return out.reshape(shape)
+
+    raise ValueError(f"Unknown adjustment method: {method!r}")
+
+
+# =============================================================================
+# CORE ENGINE
+# =============================================================================
+
+
+def _clopper_pearson_ci(
+    successes: int, n: int, alpha: float = 0.05
+) -> Tuple[float, float]:
+    """Exact 95% CI for a binomial proportion (Clopper-Pearson)."""
+    try:
+        from scipy.stats import beta as _beta  # type: ignore
+    except ImportError:
+        # Wilson-style fallback
+        if n == 0:
+            return (0.0, 1.0)
+        p_hat = successes / n
+        se = np.sqrt(p_hat * (1 - p_hat) / n)
+        return (max(0.0, p_hat - 1.96 * se), min(1.0, p_hat + 1.96 * se))
+    if n == 0:
+        return (0.0, 1.0)
+    if successes == 0:
+        lo = 0.0
+    else:
+        lo = float(_beta.ppf(alpha / 2, successes, n - successes + 1))
+    if successes == n:
+        hi = 1.0
+    else:
+        hi = float(_beta.ppf(1 - alpha / 2, successes + 1, n - successes))
+    return (lo, hi)
+
+
+def permutation_test(
+    *,
+    group_matrix: np.ndarray,
+    entity_matrix: np.ndarray,
+    statistic: Callable[[np.ndarray], Any] = chi2_statistic,
+    n_permutations: Optional[int] = None,
+    target_seconds: float = 5.0,
+    alternative: Literal["greater", "two-sided"] = "greater",
+    random_state: Optional[Union[int, np.random.Generator]] = None,
+    statistic_name: str = "",
+    return_null: bool = True,
+    show_progress: bool = False,
+    warn_disjoint: bool = True,
+) -> PermutationResult:
+    """
+    Permutation test of association between groups and entities.
+
+    The test holds the document x entity indicator matrix fixed and
+    permutes the rows of the document x group indicator matrix B times.
+    For each permutation it forms the contingency table
+    ``T_b = G_perm.T @ E`` and applies ``statistic``.
+
+    Parameters
+    ----------
+    group_matrix : np.ndarray, shape (n_docs, n_groups)
+        Binary or 0/1 group membership indicators (overlap allowed).
+    entity_matrix : np.ndarray, shape (n_docs, n_entities)
+        Document-level indicators (binary or counts) for the entity
+        being associated (e.g. authors, keywords, countries).
+    statistic : callable, default chi2_statistic
+        A function that maps a contingency table (n_groups x n_entities)
+        to a scalar, vector, or matrix statistic.
+    n_permutations : int, optional
+        Number of permutations. If None, ``adaptive_n_permutations``
+        chooses a value matching ``target_seconds``.
+    target_seconds : float, default 5.0
+        Time budget when ``n_permutations`` is None.
+    alternative : {"greater", "two-sided"}, default "greater"
+        - "greater" : right-tail (typical for chi^2, V, inertia).
+        - "two-sided" : symmetric around the null mean (used for
+          standardised residuals where sign matters).
+    random_state : int or np.random.Generator, optional
+        Seed or generator for reproducibility.
+    statistic_name : str
+        Label stored in the result for downstream reporting.
+    return_null : bool, default True
+        Keep the full null distribution in the result. Set to False to
+        reduce memory when the statistic is matrix-valued and B is large.
+    show_progress : bool, default False
+        Show a tqdm progress bar over permutations.
+    warn_disjoint : bool, default True
+        Warn (once) if ``group_matrix`` is a disjoint partition.
+
+    Returns
+    -------
+    PermutationResult
+
+    Notes
+    -----
+    The reported p-value uses the conservative formula
+    ``p = (1 + #{T_b >= T_0}) / (1 + B)`` (Phipson & Smyth 2010), which
+    avoids the spurious p = 0 that the naive formula
+    ``#{T_b >= T_0} / B`` can produce.
+    """
+    G = np.asarray(group_matrix, dtype=float)
+    E = np.asarray(entity_matrix, dtype=float)
+    if G.ndim != 2 or E.ndim != 2:
+        raise ValueError("group_matrix and entity_matrix must both be 2-D")
+    if G.shape[0] != E.shape[0]:
+        raise ValueError(
+            f"group_matrix and entity_matrix must have the same number of "
+            f"rows; got {G.shape[0]} and {E.shape[0]}."
+        )
+    n_docs = G.shape[0]
+    if n_docs == 0:
+        raise ValueError("Empty input matrices.")
+
+    if warn_disjoint:
+        warn_if_partition(G)
+
+    if isinstance(random_state, np.random.Generator):
+        rng = random_state
+        seed_repr = None
+    else:
+        rng = np.random.default_rng(random_state)
+        seed_repr = random_state
+
+    # Observed statistic
+    T0 = G.T @ E
+    observed = statistic(T0)
+    observed_arr = np.asarray(observed)
+    is_scalar = observed_arr.ndim == 0
+
+    # Decide B
+    if n_permutations is None:
+        B = adaptive_n_permutations(
+            G, E, statistic, target_seconds=target_seconds, rng=rng
+        )
+    else:
+        B = int(n_permutations)
+    if B < 1:
+        raise ValueError("n_permutations must be >= 1.")
+
+    # Allocate counters / null storage
+    if is_scalar:
+        if return_null:
+            null = np.empty(B, dtype=float)
+        else:
+            null = None
+        if alternative == "greater":
+            count_extreme = 0
+        else:
+            count_extreme = 0  # populated after the loop using stored null or running stats
+    else:
+        if return_null:
+            null = np.empty((B,) + observed_arr.shape, dtype=float)
+        else:
+            null = None
+        count_extreme = np.zeros(observed_arr.shape, dtype=np.int64)
+
+    # Main loop
+    iterator = range(B)
+    if show_progress and _TQDM_AVAILABLE:
+        iterator = tqdm(iterator, desc="permutations", total=B)
+
+    t_start = time.perf_counter()
+    for b in iterator:
+        perm = rng.permutation(n_docs)
+        T_b = G[perm].T @ E
+        s_b = statistic(T_b)
+
+        if is_scalar:
+            s_b_val = float(s_b)
+            if return_null:
+                null[b] = s_b_val  # type: ignore[index]
+            if alternative == "greater":
+                if s_b_val >= float(observed):  # type: ignore[arg-type]
+                    count_extreme += 1
+            # for two-sided we'll recompute after the loop
+        else:
+            s_b_arr = np.asarray(s_b)
+            if return_null:
+                null[b] = s_b_arr  # type: ignore[index]
+            if alternative == "greater":
+                count_extreme += (s_b_arr >= observed_arr).astype(np.int64)
+            else:  # two-sided handled below using |x|
+                count_extreme += (np.abs(s_b_arr) >= np.abs(observed_arr)).astype(
+                    np.int64
+                )
+
+    elapsed = time.perf_counter() - t_start
+
+    # Finalize p-values
+    if is_scalar:
+        if alternative == "two-sided":
+            if return_null and null is not None:
+                # symmetrize around null mean for robustness
+                center = float(np.mean(null))
+                obs_centered = abs(float(observed) - center)
+                count_extreme = int(np.sum(np.abs(null - center) >= obs_centered))
+            else:
+                # Without null storage, fall back to twice the one-sided
+                p_one = (1 + count_extreme) / (1 + B)
+                p_value = min(1.0, 2 * p_one)
+                ci = _clopper_pearson_ci(count_extreme, B)
+                return PermutationResult(
+                    observed=float(observed),
+                    null_distribution=None,
+                    p_value=p_value,
+                    p_value_ci=ci,
+                    n_permutations=B,
+                    statistic_name=statistic_name,
+                    alternative=alternative,
+                    seed=seed_repr,
+                    elapsed_seconds=elapsed,
+                )
+        p_value = (1 + count_extreme) / (1 + B)
+        ci = _clopper_pearson_ci(count_extreme, B)
+        return PermutationResult(
+            observed=float(observed),
+            null_distribution=null,
+            p_value=float(p_value),
+            p_value_ci=ci,
+            n_permutations=B,
+            statistic_name=statistic_name,
+            alternative=alternative,
+            seed=seed_repr,
+            elapsed_seconds=elapsed,
+        )
+    else:
+        p_value = (1 + count_extreme) / (1 + B)
+        return PermutationResult(
+            observed=observed_arr,
+            null_distribution=null,
+            p_value=p_value,
+            p_value_ci=None,  # cell-wise CI is overkill; users do BH on p_value
+            n_permutations=B,
+            statistic_name=statistic_name,
+            alternative=alternative,
+            seed=seed_repr,
+            elapsed_seconds=elapsed,
+        )
+
+
+# =============================================================================
+# CONVENIENCE WRAPPER (DataFrame-friendly)
+# =============================================================================
+
+
+def assoc_permutation_test(
+    group_matrix,
+    entity_matrix,
+    *,
+    test: Literal[
+        "chi2", "cramers_v", "total_inertia", "dimension_inertias", "residuals"
+    ] = "chi2",
+    n_permutations: Optional[int] = None,
+    target_seconds: float = 5.0,
+    n_dimensions: Optional[int] = None,
+    multiple_testing: Literal["bh", "holm", "bonferroni", "none"] = "bh",
+    random_state: Optional[Union[int, np.random.Generator]] = None,
+    show_progress: bool = False,
+    warn_disjoint: bool = True,
+) -> PermutationResult:
+    """
+    DataFrame-friendly wrapper around :func:`permutation_test`.
+
+    Accepts pandas DataFrames or NumPy arrays for both matrices and
+    dispatches to one of the built-in test statistics.
+
+    Parameters
+    ----------
+    group_matrix : pd.DataFrame or np.ndarray, shape (n_docs, n_groups)
+    entity_matrix : pd.DataFrame or np.ndarray, shape (n_docs, n_entities)
+    test : str
+        Which built-in test to run. ``"residuals"`` returns a matrix of
+        cell-level p-values with ``multiple_testing`` applied; the other
+        options return scalar or vector statistics.
+    multiple_testing : {"bh", "holm", "bonferroni", "none"}, default "bh"
+        Used only for ``test="residuals"``.
+
+    Returns
+    -------
+    PermutationResult
+        For ``test="residuals"``, the ``extra`` dict holds an additional
+        key ``"p_value_adjusted"`` with the BH/Holm/Bonferroni-adjusted
+        cell-level p-values.
+    """
+    G = np.asarray(group_matrix.values if hasattr(group_matrix, "values") else group_matrix)
+    E = np.asarray(
+        entity_matrix.values if hasattr(entity_matrix, "values") else entity_matrix
+    )
+
+    if test == "chi2":
+        result = permutation_test(
+            group_matrix=G,
+            entity_matrix=E,
+            statistic=chi2_statistic,
+            n_permutations=n_permutations,
+            target_seconds=target_seconds,
+            alternative="greater",
+            random_state=random_state,
+            statistic_name="chi2",
+            show_progress=show_progress,
+            warn_disjoint=warn_disjoint,
+        )
+        return result
+
+    if test == "cramers_v":
+        return permutation_test(
+            group_matrix=G,
+            entity_matrix=E,
+            statistic=cramers_v_statistic,
+            n_permutations=n_permutations,
+            target_seconds=target_seconds,
+            alternative="greater",
+            random_state=random_state,
+            statistic_name="cramers_v",
+            show_progress=show_progress,
+            warn_disjoint=warn_disjoint,
+        )
+
+    if test == "total_inertia":
+        return permutation_test(
+            group_matrix=G,
+            entity_matrix=E,
+            statistic=total_inertia_statistic,
+            n_permutations=n_permutations,
+            target_seconds=target_seconds,
+            alternative="greater",
+            random_state=random_state,
+            statistic_name="total_inertia",
+            show_progress=show_progress,
+            warn_disjoint=warn_disjoint,
+        )
+
+    if test == "dimension_inertias":
+        def _stat(table: np.ndarray) -> np.ndarray:
+            return dimension_inertias_statistic(table, n_dimensions=n_dimensions)
+
+        return permutation_test(
+            group_matrix=G,
+            entity_matrix=E,
+            statistic=_stat,
+            n_permutations=n_permutations,
+            target_seconds=target_seconds,
+            alternative="greater",
+            random_state=random_state,
+            statistic_name="dimension_inertias",
+            show_progress=show_progress,
+            warn_disjoint=warn_disjoint,
+        )
+
+    if test == "residuals":
+        result = permutation_test(
+            group_matrix=G,
+            entity_matrix=E,
+            statistic=standardized_residuals_statistic,
+            n_permutations=n_permutations,
+            target_seconds=target_seconds,
+            alternative="two-sided",
+            random_state=random_state,
+            statistic_name="standardized_residuals",
+            show_progress=show_progress,
+            warn_disjoint=warn_disjoint,
+        )
+        # Apply multiple-testing correction across the cell-level p-values
+        adj = adjust_p_values(np.asarray(result.p_value), method=multiple_testing)
+        result.extra["p_value_adjusted"] = adj
+        result.extra["multiple_testing"] = multiple_testing
+        return result
+
+    raise ValueError(f"Unknown test {test!r}")
+
+
+__all__ = [
+    "PermutationResult",
+    "is_partition",
+    "warn_if_partition",
+    "adaptive_n_permutations",
+    "chi2_statistic",
+    "cramers_v_statistic",
+    "total_inertia_statistic",
+    "standardized_residuals_statistic",
+    "dimension_inertias_statistic",
+    "adjust_p_values",
+    "permutation_test",
+    "assoc_permutation_test",
+]
+
+
+# =============================================================================
+# FIRTH LOGISTIC REGRESSION (integrated from utilsbib_modules.firth)
+# =============================================================================
+
+# -*- coding: utf-8 -*-
+"""
+biblium.utilsbib_modules.firth_logit
+====================================
+
+Firth-penalized logistic regression with optional auto-detection
+of (near-)singular design matrices and (quasi-)complete separation.
+
+Motivation
+----------
+Standard maximum likelihood estimation (MLE) of a logistic regression
+fails or yields unbounded coefficients when the design matrix is
+(nearly) singular or when the binary outcome is perfectly separable by
+some linear combination of predictors. Both situations occur frequently
+in bibliometric group analyses with overlapping groups and rare
+predictors (e.g. a keyword that appears in only one or two documents,
+all of which belong to the same group).
+
+Firth (1993) proposed adding a Jeffreys-prior penalty term
+``(1/2) log|I(beta)|`` to the log-likelihood, which:
+
+- guarantees a finite maximum penalised likelihood estimate (PMLE)
+  even under complete separation;
+- removes the leading-order bias of the MLE;
+- is invariant under reparametrisation.
+
+Heinze and Schemper (2002) recommend profile-likelihood (PL) confidence
+intervals over Wald CIs for Firth estimates, because Wald CIs may still
+mislead when the underlying separation is severe.
+
+References
+----------
+Firth, D. (1993). Bias reduction of maximum likelihood estimates.
+    Biometrika, 80(1), 27-38.
+Heinze, G., & Schemper, M. (2002). A solution to the problem of
+    separation in logistic regression. Statistics in Medicine, 21(16),
+    2409-2419.
+
+Public components
+-----------------
+LogitResult
+    Dataclass holding coefficients, standard errors, z-values, Wald
+    and (optionally) likelihood-ratio p-values, Wald or
+    profile-likelihood CIs, fit diagnostics, and a label of which
+    method was actually used.
+
+firth_logit
+    Fit Firth-penalised logistic regression directly.
+
+mle_logit
+    Fit ordinary MLE logistic regression (provided for completeness
+    and for the auto-detect path).
+
+fit_logit
+    Auto-detect routine. Inspects the design matrix and the MLE result;
+    falls back to Firth on (near-)singular X or evidence of separation.
+
+is_design_ill_conditioned
+    Diagnostic for the design matrix.
+
+detect_separation_after_fit
+    Diagnostic applied to a fitted MLE to detect (quasi-)complete
+    separation post hoc.
+
+Author: Lan Umek
+Version: 2.16.0
+"""
+
+
+import warnings
+from dataclasses import dataclass, field
+from typing import (
+    Any,
+    Dict,
+    List,
+    Literal,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+)
+
+import numpy as np
+import pandas as pd
+from scipy import optimize, stats
+from scipy.special import expit, log1p
+
+# =============================================================================
+# CONSTANTS
+# =============================================================================
+
+# Clip linear predictor to avoid overflow in exp; |eta| > 30 already gives
+# pi extremely close to 0 or 1.
+_ETA_CLIP = 30.0
+
+# Singularity diagnostic threshold on cond(X.T @ X). Conventional rule of
+# thumb: cond > 1e10 is "near singular" for double precision.
+_COND_THRESHOLD_DEFAULT = 1e10
+
+# Coefficient threshold above which we suspect quasi-complete separation
+# in a fitted MLE. Heinze (1999) suggests 10-20; we use 15 as a soft default.
+_SEP_COEF_THRESHOLD = 15.0
+
+
+# =============================================================================
+# RESULT CONTAINER
+# =============================================================================
+
+
+@dataclass
+class LogitResult:
+    """
+    Container for the result of a (Firth or MLE) logistic regression fit.
+
+    Attributes
+    ----------
+    coef : np.ndarray, shape (p,)
+        Estimated coefficients (intercept first if ``add_intercept=True``
+        was used).
+    se : np.ndarray, shape (p,)
+        Standard errors from the inverse Fisher information at the fit.
+    z_values : np.ndarray, shape (p,)
+        coef / se.
+    p_values_wald : np.ndarray, shape (p,)
+        Two-sided Wald p-values from the standard normal distribution.
+    p_values_lrt : np.ndarray or None
+        Two-sided likelihood-ratio test p-values for ``H_0: beta_j = 0``.
+        ``None`` unless ``compute_lrt=True`` was passed.
+    ci_low, ci_high : np.ndarray, shape (p,)
+        Lower / upper bounds of the requested confidence intervals.
+    ci_method : str
+        ``"wald"`` or ``"profile"``.
+    alpha : float
+        The CI level used (default 0.05 for 95% CIs).
+    log_likelihood : float
+        Unpenalised log-likelihood at the fitted coefficients.
+    log_likelihood_penalised : float or None
+        Firth penalised log-likelihood; ``None`` for plain MLE.
+    n_iterations : int
+        Newton-Raphson iterations used.
+    converged : bool
+        Whether the optimiser declared convergence.
+    method_used : str
+        ``"firth"``, ``"mle"``, or ``"firth_after_mle_failure"``.
+    feature_names : list of str
+        Predictor labels (length p).
+    n_obs : int
+    n_features : int
+    extra : dict
+        Free-form diagnostics (separation flags, condition number, ...).
+    """
+
+    coef: np.ndarray
+    se: np.ndarray
+    z_values: np.ndarray
+    p_values_wald: np.ndarray
+    p_values_lrt: Optional[np.ndarray]
+    ci_low: np.ndarray
+    ci_high: np.ndarray
+    ci_method: str
+    alpha: float
+    log_likelihood: float
+    log_likelihood_penalised: Optional[float]
+    null_log_likelihood: float = 0.0  # llf of intercept-only model, for pseudo-R^2
+    n_iterations: int = 0
+    converged: bool = False
+    method_used: str = ""
+    feature_names: List[str] = field(default_factory=list)
+    n_obs: int = 0
+    n_features: int = 0
+    extra: Dict[str, Any] = field(default_factory=dict)
+
+    def summary(self) -> pd.DataFrame:
+        """Return a tidy summary DataFrame, one row per coefficient."""
+        cols = {
+            "coef": self.coef,
+            "se": self.se,
+            "z": self.z_values,
+            "p_wald": self.p_values_wald,
+            f"ci_low_{int((1 - self.alpha) * 100)}": self.ci_low,
+            f"ci_high_{int((1 - self.alpha) * 100)}": self.ci_high,
+        }
+        if self.p_values_lrt is not None:
+            cols["p_lrt"] = self.p_values_lrt
+        df = pd.DataFrame(cols, index=self.feature_names)
+        df.index.name = "feature"
+        return df
+
+    def to_statsmodels_compat_summary(self) -> pd.DataFrame:
+        """
+        Return a coefficient table in the column-name style produced by
+        ``statsmodels.LogitResults.summary2().tables[1]``.
+
+        This is provided so that downstream code (e.g. ``save_logistic_results``)
+        that was written against the statsmodels output format keeps working
+        when its source is replaced by a Firth/MLE fit from this module.
+
+        Columns: ``Coef.``, ``Std.Err.``, ``z``, ``P>|z|``, ``[0.025``, ``0.975]``.
+        """
+        lo_pct = (self.alpha / 2)
+        hi_pct = 1 - lo_pct
+        return pd.DataFrame(
+            {
+                "Coef.": self.coef,
+                "Std.Err.": self.se,
+                "z": self.z_values,
+                "P>|z|": self.p_values_wald,
+                f"[{lo_pct:.3f}": self.ci_low,
+                f"{hi_pct:.3f}]": self.ci_high,
+            },
+            index=self.feature_names,
+        )
+
+    # ------------------------------------------------------------------
+    # statsmodels-compatible aliases (so a LogitResult is a drop-in
+    # replacement for ``statsmodels.LogitResults`` without needing a
+    # separate adapter object).
+    # ------------------------------------------------------------------
+    @property
+    def params(self) -> pd.Series:
+        return pd.Series(self.coef, index=self.feature_names, name="coef")
+
+    @property
+    def pvalues(self) -> pd.Series:
+        return pd.Series(self.p_values_wald, index=self.feature_names, name="p_wald")
+
+    @property
+    def bse(self) -> pd.Series:
+        return pd.Series(self.se, index=self.feature_names, name="se")
+
+    @property
+    def tvalues(self) -> pd.Series:
+        return pd.Series(self.z_values, index=self.feature_names, name="z")
+
+    @property
+    def llf(self) -> float:
+        return self.log_likelihood
+
+    @property
+    def llnull(self) -> float:
+        return self.null_log_likelihood
+
+    @property
+    def nobs(self) -> int:
+        return self.n_obs
+
+    @property
+    def aic(self) -> float:
+        return -2.0 * self.log_likelihood + 2.0 * self.n_features
+
+    @property
+    def bic(self) -> float:
+        return -2.0 * self.log_likelihood + self.n_features * np.log(max(self.n_obs, 1))
+
+    @property
+    def prsquared(self) -> float:
+        if self.null_log_likelihood == 0:
+            return 0.0
+        return 1.0 - self.log_likelihood / self.null_log_likelihood
+
+    def conf_int(self, alpha: Optional[float] = None) -> pd.DataFrame:
+        if alpha is not None and abs(alpha - self.alpha) > 1e-9:
+            warnings.warn(
+                f"conf_int(alpha={alpha}) ignored; CIs were computed at "
+                f"alpha={self.alpha} during fitting.",
+                UserWarning, stacklevel=2,
+            )
+        return pd.DataFrame(
+            {0: self.ci_low, 1: self.ci_high}, index=self.feature_names,
+        )
+
+    def __repr__(self) -> str:
+        return (
+            f"LogitResult(method={self.method_used!r}, "
+            f"n_obs={self.n_obs}, n_features={self.n_features}, "
+            f"converged={self.converged}, "
+            f"log_lik={self.log_likelihood:.4g})"
+        )
+
+
+# =============================================================================
+# Statsmodels-compatible adapter
+# =============================================================================
+
+
+class StatsmodelsCompatAdapter:
+    """
+    Lightweight adapter that exposes the attributes commonly used from
+    ``statsmodels.LogitResults`` (``params``, ``bse``, ``nobs``, ``aic``,
+    ``bic``, ``prsquared``) on top of a ``LogitResult``.
+
+    This is intended for legacy code that consumes statsmodels logit
+    results and that we do not want to rewrite immediately.
+    """
+
+    def __init__(self, logit_result: LogitResult, y: np.ndarray):
+        self._result = logit_result
+        y_arr = np.asarray(y, dtype=float).ravel()
+        n = int(y_arr.size)
+        k = int(logit_result.n_features)
+
+        # Coefficient series indexed by feature name
+        self.params = pd.Series(logit_result.coef, index=logit_result.feature_names)
+        self.bse = pd.Series(logit_result.se, index=logit_result.feature_names)
+        self.tvalues = pd.Series(logit_result.z_values, index=logit_result.feature_names)
+        self.pvalues = pd.Series(
+            logit_result.p_values_wald, index=logit_result.feature_names
+        )
+
+        # Information criteria from the unpenalised log-likelihood
+        ll = float(logit_result.log_likelihood)
+        self.llf = ll
+        self.nobs = n
+        self.aic = -2.0 * ll + 2.0 * k
+        self.bic = -2.0 * ll + k * np.log(max(n, 1))
+
+        # McFadden pseudo-R^2 against the intercept-only Bernoulli null
+        p = float(np.clip(y_arr.mean(), 1e-15, 1 - 1e-15))
+        ll_null = float(n * (p * np.log(p) + (1 - p) * np.log(1 - p)))
+        self.llnull = ll_null
+        self.prsquared = (1.0 - ll / ll_null) if ll_null != 0.0 else 0.0
+
+        # Pass-throughs commonly used by exporters
+        self.df_model = k - 1  # excluding intercept
+        self.df_resid = n - k
+        self.converged = logit_result.converged
+        self.method_used = logit_result.method_used
+
+    def __getattr__(self, item):
+        # Last-resort fallback to underlying LogitResult attributes
+        return getattr(self._result, item)
+
+
+# =============================================================================
+# CORE NUMERICAL HELPERS
+# =============================================================================
+
+
+def _safe_predict(X: np.ndarray, beta: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """Return (eta, pi) with eta clipped to ``[-_ETA_CLIP, _ETA_CLIP]``."""
+    eta = np.clip(X @ beta, -_ETA_CLIP, _ETA_CLIP)
+    pi = expit(eta)
+    return eta, pi
+
+
+def _log_likelihood(X: np.ndarray, y: np.ndarray, beta: np.ndarray) -> float:
+    """
+    Numerically stable Bernoulli log-likelihood:
+    sum_i [ y_i * eta_i - log(1 + exp(eta_i)) ].
+    """
+    eta = np.clip(X @ beta, -_ETA_CLIP, _ETA_CLIP)
+    # log(1 + exp(eta)) computed stably:
+    # = max(0, eta) + log1p(exp(-|eta|))
+    pos = np.maximum(eta, 0.0)
+    log_one_plus_exp = pos + log1p(np.exp(-np.abs(eta)))
+    return float(np.sum(y * eta - log_one_plus_exp))
+
+
+def _fisher_information(X: np.ndarray, pi: np.ndarray) -> np.ndarray:
+    """Return X' W X with W = diag(pi * (1 - pi))."""
+    W = pi * (1.0 - pi)
+    Xw = X * W[:, None]
+    return X.T @ Xw  # symmetric, p x p
+
+
+def _safe_inverse(M: np.ndarray) -> Tuple[np.ndarray, bool]:
+    """
+    Invert a symmetric matrix; fall back to pseudoinverse on singularity.
+    Returns ``(M_inv, was_pinv)``.
+    """
+    try:
+        return np.linalg.inv(M), False
+    except np.linalg.LinAlgError:
+        return np.linalg.pinv(M), True
+
+
+def _penalised_log_likelihood(X: np.ndarray, y: np.ndarray, beta: np.ndarray) -> float:
+    """
+    Firth-penalised log-likelihood:
+    l_pen(beta) = l(beta) + (1/2) log|I(beta)|.
+
+    Uses ``slogdet`` for numerical robustness; returns ``-inf`` if the
+    information matrix is non-positive-definite (so step halving will
+    reject the step).
+    """
+    _, pi = _safe_predict(X, beta)
+    I = _fisher_information(X, pi)
+    sign, logdet = np.linalg.slogdet(I)
+    if sign <= 0 or not np.isfinite(logdet):
+        return -np.inf
+    return _log_likelihood(X, y, beta) + 0.5 * logdet
+
+
+# =============================================================================
+# DESIGN-MATRIX DIAGNOSTICS
+# =============================================================================
+
+
+def is_design_ill_conditioned(
+    X: np.ndarray,
+    threshold: float = _COND_THRESHOLD_DEFAULT,
+) -> Tuple[bool, float]:
+    """
+    Test whether ``X.T @ X`` is (near-)singular.
+
+    Returns
+    -------
+    flag : bool
+        True if cond(X.T @ X) > threshold or X is rank-deficient.
+    cond : float
+        The 2-norm condition number of X.T @ X (np.inf if rank-deficient).
+    """
+    X = np.asarray(X, dtype=float)
+    XtX = X.T @ X
+    try:
+        cond = float(np.linalg.cond(XtX))
+    except np.linalg.LinAlgError:
+        cond = np.inf
+    flag = (not np.isfinite(cond)) or cond > threshold
+    return flag, cond
+
+
+def detect_separation_after_fit(
+    coef: np.ndarray,
+    converged: bool,
+    coef_threshold: float = _SEP_COEF_THRESHOLD,
+) -> Tuple[bool, str]:
+    """
+    Flag (quasi-)complete separation based on a fitted MLE.
+
+    Heuristics:
+
+    - Non-convergence is a strong signal.
+    - Any |coef| above ``coef_threshold`` (default 15, corresponding to an
+      odds ratio of e^15 ~ 3.3 million) is implausible in practice and
+      typically arises only under separation.
+    """
+    if not converged:
+        return True, "MLE did not converge"
+    max_abs = float(np.max(np.abs(coef))) if coef.size else 0.0
+    if max_abs > coef_threshold:
+        return True, f"Implausibly large coefficient (max |coef| = {max_abs:.2f})"
+    return False, ""
+
+
+# =============================================================================
+# CORE FITTERS
+# =============================================================================
+
+
+def _newton_logit(
+    X: np.ndarray,
+    y: np.ndarray,
+    *,
+    firth: bool,
+    max_iter: int,
+    tol: float,
+    init_beta: Optional[np.ndarray] = None,
+) -> Tuple[np.ndarray, int, bool, np.ndarray]:
+    """
+    Newton-Raphson logistic regression with optional Firth correction
+    and step halving.
+
+    Returns
+    -------
+    beta : np.ndarray
+        Fitted coefficients.
+    n_iter : int
+        Number of iterations taken.
+    converged : bool
+        Whether the convergence criterion was met.
+    I_inv : np.ndarray
+        Inverse Fisher information at the fit (used for SEs).
+    """
+    n, p = X.shape
+    beta = np.zeros(p) if init_beta is None else np.asarray(init_beta, dtype=float).copy()
+
+    # Objective for step halving
+    if firth:
+        objective = lambda b: _penalised_log_likelihood(X, y, b)
+    else:
+        objective = lambda b: _log_likelihood(X, y, b)
+
+    obj_old = objective(beta)
+    converged = False
+
+    for iteration in range(1, max_iter + 1):
+        _, pi = _safe_predict(X, beta)
+        I = _fisher_information(X, pi)
+        I_inv, used_pinv = _safe_inverse(I)
+
+        # Score (with Firth correction term if requested)
+        if firth:
+            # Hat-matrix diagonals h_i = (X I^-1 X')_ii * W_i
+            XIinv = X @ I_inv
+            diag_hat = np.einsum("ij,ij->i", XIinv, X)  # (X I^-1 X')_ii
+            W = pi * (1.0 - pi)
+            h = diag_hat * W
+            U = X.T @ (y - pi + h * (0.5 - pi))
+        else:
+            U = X.T @ (y - pi)
+
+        delta = I_inv @ U
+
+        # Step halving
+        step = 1.0
+        beta_new = beta + delta
+        obj_new = objective(beta_new)
+        n_halving = 0
+        while (not np.isfinite(obj_new) or obj_new < obj_old - 1e-12) and n_halving < 30:
+            step *= 0.5
+            beta_new = beta + step * delta
+            obj_new = objective(beta_new)
+            n_halving += 1
+
+        if not np.isfinite(obj_new):
+            # Cannot make any progress: bail out flagged as non-converged.
+            break
+
+        beta = beta_new
+        obj_old = obj_new
+
+        # Convergence check on the (possibly reduced) step
+        if np.max(np.abs(step * delta)) < tol:
+            converged = True
+            break
+
+    # Final information matrix at the fit
+    _, pi = _safe_predict(X, beta)
+    I_final = _fisher_information(X, pi)
+    I_inv_final, _ = _safe_inverse(I_final)
+    return beta, iteration, converged, I_inv_final
+
+
+# -----------------------------------------------------------------------------
+# Public fitters
+# -----------------------------------------------------------------------------
+
+
+def _prepare_design(
+    X: Union[np.ndarray, pd.DataFrame],
+    add_intercept: bool,
+    feature_names: Optional[Sequence[str]],
+) -> Tuple[np.ndarray, List[str]]:
+    """Coerce X to ndarray and add intercept; build feature names."""
+    if isinstance(X, pd.DataFrame):
+        names = list(X.columns.astype(str))
+        Xa = X.to_numpy(dtype=float, copy=True)
+    else:
+        Xa = np.asarray(X, dtype=float)
+        if Xa.ndim != 2:
+            raise ValueError("X must be 2-D.")
+        if feature_names is None:
+            names = [f"x{i}" for i in range(Xa.shape[1])]
+        else:
+            names = list(feature_names)
+            if len(names) != Xa.shape[1]:
+                raise ValueError(
+                    f"feature_names has length {len(names)} but X has "
+                    f"{Xa.shape[1]} columns."
+                )
+
+    if add_intercept:
+        # Avoid duplicating an existing constant column
+        if not np.allclose(Xa[:, 0], 1.0) if Xa.shape[1] > 0 else True:
+            Xa = np.column_stack([np.ones(Xa.shape[0]), Xa])
+            names = ["const"] + names
+
+    return Xa, names
+
+
+def firth_logit(
+    X: Union[np.ndarray, pd.DataFrame],
+    y: Union[np.ndarray, pd.Series],
+    *,
+    add_intercept: bool = True,
+    max_iter: int = 200,
+    tol: float = 1e-6,
+    feature_names: Optional[Sequence[str]] = None,
+    ci_method: Literal["wald", "profile"] = "profile",
+    alpha: float = 0.05,
+    compute_lrt: bool = False,
+) -> LogitResult:
+    """
+    Fit Firth-penalised logistic regression.
+
+    Parameters
+    ----------
+    X : np.ndarray or pd.DataFrame, shape (n, p)
+        Design matrix. Column names of a DataFrame are used as
+        ``feature_names``.
+    y : np.ndarray or pd.Series, shape (n,)
+        Binary outcome (0/1).
+    add_intercept : bool, default True
+        Prepend a constant column unless one is already present.
+    max_iter : int, default 100
+        Maximum Newton-Raphson iterations.
+    tol : float, default 1e-8
+        Convergence tolerance on max absolute step.
+    feature_names : sequence of str, optional
+        Used only when X is a plain ndarray.
+    ci_method : {"wald", "profile"}, default "profile"
+        ``"profile"`` is recommended by Heinze & Schemper (2002) for Firth
+        and is the default; ``"wald"`` is faster but less reliable when
+        the underlying problem involved separation.
+    alpha : float, default 0.05
+        CI significance level (95% CIs by default).
+    compute_lrt : bool, default False
+        If True, also compute likelihood-ratio p-values for each
+        coefficient (one penalised refit per coefficient -- expensive).
+
+    Returns
+    -------
+    LogitResult
+
+    Notes
+    -----
+    Standard errors come from the inverse Fisher information at the
+    fitted coefficients (i.e. the standard sandwich denominator before
+    the Firth penalty), in line with the ``logistf`` R package.
+    """
+    Xa, names = _prepare_design(X, add_intercept, feature_names)
+    ya = np.asarray(y, dtype=float).ravel()
+    if ya.shape[0] != Xa.shape[0]:
+        raise ValueError(
+            f"X has {Xa.shape[0]} rows but y has {ya.shape[0]} values."
+        )
+    if not np.all((ya == 0) | (ya == 1)):
+        raise ValueError("y must be binary (0/1).")
+    if np.unique(ya).size < 2:
+        raise ValueError("y has only one class; cannot fit logistic regression.")
+
+    beta, n_iter, converged, I_inv = _newton_logit(
+        Xa, ya, firth=True, max_iter=max_iter, tol=tol
+    )
+
+    se = np.sqrt(np.clip(np.diag(I_inv), 0, None))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        z = np.where(se > 0, beta / se, 0.0)
+    p_wald = 2 * (1 - stats.norm.cdf(np.abs(z)))
+
+    ll = _log_likelihood(Xa, ya, beta)
+    ll_pen = _penalised_log_likelihood(Xa, ya, beta)
+
+    # Confidence intervals
+    if ci_method == "wald":
+        z_crit = stats.norm.ppf(1 - alpha / 2)
+        ci_low = beta - z_crit * se
+        ci_high = beta + z_crit * se
+    else:  # profile
+        ci_low, ci_high = _profile_likelihood_ci(
+            Xa, ya, beta, ll_pen, alpha=alpha,
+            firth=True, max_iter=max_iter, tol=tol,
+            wald_se=se,
+        )
+
+    p_lrt = None
+    if compute_lrt:
+        p_lrt = _likelihood_ratio_pvalues(
+            Xa, ya, beta, ll_pen, firth=True, max_iter=max_iter, tol=tol
+        )
+
+    # Null log-likelihood (intercept-only model) for McFadden pseudo-R^2
+    p_bar = float(np.mean(ya))
+    if 0.0 < p_bar < 1.0:
+        ll_null = float(ya.size) * (
+            p_bar * np.log(p_bar) + (1.0 - p_bar) * np.log(1.0 - p_bar)
+        )
+    else:
+        ll_null = 0.0
+
+    return LogitResult(
+        coef=beta,
+        se=se,
+        z_values=z,
+        p_values_wald=p_wald,
+        p_values_lrt=p_lrt,
+        ci_low=ci_low,
+        ci_high=ci_high,
+        ci_method=ci_method,
+        alpha=alpha,
+        log_likelihood=ll,
+        log_likelihood_penalised=ll_pen,
+        null_log_likelihood=ll_null,
+        n_iterations=n_iter,
+        converged=converged,
+        method_used="firth",
+        feature_names=names,
+        n_obs=int(Xa.shape[0]),
+        n_features=int(Xa.shape[1]),
+        extra={},
+    )
+
+
+def mle_logit(
+    X: Union[np.ndarray, pd.DataFrame],
+    y: Union[np.ndarray, pd.Series],
+    *,
+    add_intercept: bool = True,
+    max_iter: int = 200,
+    tol: float = 1e-6,
+    feature_names: Optional[Sequence[str]] = None,
+    alpha: float = 0.05,
+) -> LogitResult:
+    """
+    Fit ordinary MLE logistic regression (no Firth correction).
+
+    Provided primarily so that ``fit_logit(method='auto')`` has a clean
+    in-house fallback path; for stand-alone MLE, ``statsmodels.Logit``
+    remains a reasonable choice.
+    """
+    Xa, names = _prepare_design(X, add_intercept, feature_names)
+    ya = np.asarray(y, dtype=float).ravel()
+
+    beta, n_iter, converged, I_inv = _newton_logit(
+        Xa, ya, firth=False, max_iter=max_iter, tol=tol
+    )
+
+    se = np.sqrt(np.clip(np.diag(I_inv), 0, None))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        z = np.where(se > 0, beta / se, 0.0)
+    p_wald = 2 * (1 - stats.norm.cdf(np.abs(z)))
+
+    ll = _log_likelihood(Xa, ya, beta)
+
+    z_crit = stats.norm.ppf(1 - alpha / 2)
+    ci_low = beta - z_crit * se
+    ci_high = beta + z_crit * se
+
+    sep, msg = detect_separation_after_fit(beta, converged)
+
+    # Null log-likelihood (intercept-only model) for McFadden pseudo-R^2
+    p_bar = float(np.mean(ya))
+    if 0.0 < p_bar < 1.0:
+        ll_null = float(ya.size) * (
+            p_bar * np.log(p_bar) + (1.0 - p_bar) * np.log(1.0 - p_bar)
+        )
+    else:
+        ll_null = 0.0
+
+    return LogitResult(
+        coef=beta,
+        se=se,
+        z_values=z,
+        p_values_wald=p_wald,
+        p_values_lrt=None,
+        ci_low=ci_low,
+        ci_high=ci_high,
+        ci_method="wald",
+        alpha=alpha,
+        log_likelihood=ll,
+        log_likelihood_penalised=None,
+        null_log_likelihood=ll_null,
+        n_iterations=n_iter,
+        converged=converged,
+        method_used="mle",
+        feature_names=names,
+        n_obs=int(Xa.shape[0]),
+        n_features=int(Xa.shape[1]),
+        extra={"separation_detected": sep, "separation_msg": msg},
+    )
+
+
+def fit_logit(
+    X: Union[np.ndarray, pd.DataFrame],
+    y: Union[np.ndarray, pd.Series],
+    *,
+    method: Literal["auto", "firth", "mle"] = "auto",
+    add_intercept: bool = True,
+    max_iter: int = 200,
+    tol: float = 1e-6,
+    feature_names: Optional[Sequence[str]] = None,
+    ci_method: Optional[Literal["wald", "profile"]] = None,
+    alpha: float = 0.05,
+    compute_lrt: bool = False,
+    cond_threshold: float = _COND_THRESHOLD_DEFAULT,
+) -> LogitResult:
+    """
+    Fit logistic regression with auto-detection of pathological designs.
+
+    Parameters
+    ----------
+    method : {"auto", "firth", "mle"}, default "auto"
+        - "firth" : always use Firth.
+        - "mle"   : always use MLE (no separation handling).
+        - "auto"  : inspect the design matrix; if cond(X.T X) is above
+          ``cond_threshold`` use Firth directly. Otherwise try MLE; if
+          MLE diverges or shows signs of separation, fall back to Firth.
+    cond_threshold : float, default 1e10
+        Threshold on cond(X.T @ X) for the auto path.
+    ci_method : {"wald", "profile"}, optional
+        Defaults to "profile" for Firth and "wald" for MLE.
+    Other parameters
+        See ``firth_logit`` and ``mle_logit``.
+
+    Returns
+    -------
+    LogitResult
+        ``method_used`` records which fitter actually produced the
+        result. ``extra`` carries diagnostic flags.
+    """
+    Xa, names = _prepare_design(X, add_intercept, feature_names)
+    ya = np.asarray(y, dtype=float).ravel()
+
+    if method == "firth":
+        ci = ci_method if ci_method is not None else "profile"
+        return firth_logit(
+            Xa, ya, add_intercept=False, max_iter=max_iter, tol=tol,
+            feature_names=names, ci_method=ci, alpha=alpha,
+            compute_lrt=compute_lrt,
+        )
+
+    if method == "mle":
+        ci = ci_method if ci_method is not None else "wald"
+        if ci != "wald":
+            warnings.warn(
+                "ci_method='profile' is only implemented for Firth fits; "
+                "using Wald CIs for MLE.",
+                UserWarning, stacklevel=2,
+            )
+        return mle_logit(
+            Xa, ya, add_intercept=False, max_iter=max_iter, tol=tol,
+            feature_names=names, alpha=alpha,
+        )
+
+    # Auto path
+    ill, cond = is_design_ill_conditioned(Xa, threshold=cond_threshold)
+    if ill:
+        ci = ci_method if ci_method is not None else "profile"
+        result = firth_logit(
+            Xa, ya, add_intercept=False, max_iter=max_iter, tol=tol,
+            feature_names=names, ci_method=ci, alpha=alpha,
+            compute_lrt=compute_lrt,
+        )
+        result.extra["auto_reason"] = (
+            f"cond(X.T@X) = {cond:.2e} > {cond_threshold:.0e}"
+        )
+        result.extra["cond_xtx"] = cond
+        return result
+
+    # Try MLE first
+    mle = mle_logit(
+        Xa, ya, add_intercept=False, max_iter=max_iter, tol=tol,
+        feature_names=names, alpha=alpha,
+    )
+    sep_flag = mle.extra.get("separation_detected", False)
+    if sep_flag:
+        ci = ci_method if ci_method is not None else "profile"
+        result = firth_logit(
+            Xa, ya, add_intercept=False, max_iter=max_iter, tol=tol,
+            feature_names=names, ci_method=ci, alpha=alpha,
+            compute_lrt=compute_lrt,
+        )
+        result.method_used = "firth_after_mle_failure"
+        result.extra["auto_reason"] = mle.extra.get("separation_msg", "")
+        result.extra["mle_attempt"] = {
+            "converged": mle.converged,
+            "max_abs_coef": float(np.max(np.abs(mle.coef))) if mle.coef.size else 0.0,
+        }
+        result.extra["cond_xtx"] = cond
+        return result
+
+    mle.extra["cond_xtx"] = cond
+    mle.extra["auto_reason"] = "MLE accepted (no ill-conditioning, no separation)"
+    return mle
+
+
+# =============================================================================
+# PROFILE-LIKELIHOOD CI
+# =============================================================================
+
+
+def _refit_with_constraint(
+    X: np.ndarray,
+    y: np.ndarray,
+    j: int,
+    fixed_value: float,
+    *,
+    firth: bool,
+    init_beta: np.ndarray,
+    max_iter: int,
+    tol: float,
+) -> Tuple[float, bool]:
+    """
+    Refit logistic regression with ``beta[j]`` held at ``fixed_value``.
+
+    Returns the (penalised) log-likelihood at the constrained MLE and a
+    convergence flag.
+
+    Implementation note
+    -------------------
+    For Firth, the penalty term is ``(1/2) log|I_full(beta)|``, where
+    ``I_full`` is the Fisher information of the *unrestricted* model.
+    A naive offset+reduced-design implementation would compute the
+    penalty on ``I_red`` (the reduced design), which is mathematically
+    a different penalty and gives incorrect profile-likelihood values.
+
+    We therefore evaluate the objective on the *full* coefficient vector
+    (with ``beta[j] = fixed_value``) and only compute the *gradient and
+    Hessian step* with respect to the free coordinates. The score uses
+    the full-design hat values; the Hessian step uses the reduced
+    Fisher information (a standard Firth approximation).
+    """
+    n, p = X.shape
+
+    if p == 1:
+        # Only one parameter, and it is fixed: no optimisation needed.
+        beta_full = np.array([fixed_value], dtype=float)
+        if firth:
+            return _penalised_log_likelihood(X, y, beta_full), True
+        return _log_likelihood(X, y, beta_full), True
+
+    keep = [k for k in range(p) if k != j]
+    X_red = X[:, keep]
+
+    def make_full(beta_red: np.ndarray) -> np.ndarray:
+        beta_full = np.empty(p)
+        beta_full[j] = fixed_value
+        beta_full[keep] = beta_red
+        return beta_full
+
+    if firth:
+        objective = lambda b_red: _penalised_log_likelihood(X, y, make_full(b_red))
+    else:
+        objective = lambda b_red: _log_likelihood(X, y, make_full(b_red))
+
+    beta_red = init_beta[keep].copy()
+    obj_old = objective(beta_red)
+    converged = False
+
+    for iteration in range(1, max_iter + 1):
+        beta_full = make_full(beta_red)
+        _, pi = _safe_predict(X, beta_full)
+        W = pi * (1.0 - pi)
+
+        # Reduced information for the Newton step
+        Xw_red = X_red * W[:, None]
+        I_red = X_red.T @ Xw_red
+        I_red_inv, _ = _safe_inverse(I_red)
+
+        if firth:
+            # Full-design hat values for the Firth-corrected score
+            I_full = _fisher_information(X, pi)
+            I_full_inv, _ = _safe_inverse(I_full)
+            XIinv_full = X @ I_full_inv
+            diag_hat_full = np.einsum("ij,ij->i", XIinv_full, X)
+            h_full = diag_hat_full * W
+            U_red = X_red.T @ (y - pi + h_full * (0.5 - pi))
+        else:
+            U_red = X_red.T @ (y - pi)
+
+        delta = I_red_inv @ U_red
+
+        step = 1.0
+        beta_red_new = beta_red + delta
+        obj_new = objective(beta_red_new)
+        n_halving = 0
+        while (not np.isfinite(obj_new) or obj_new < obj_old - 1e-12) and n_halving < 30:
+            step *= 0.5
+            beta_red_new = beta_red + step * delta
+            obj_new = objective(beta_red_new)
+            n_halving += 1
+
+        if not np.isfinite(obj_new):
+            break
+        beta_red = beta_red_new
+        obj_old = obj_new
+        if np.max(np.abs(step * delta)) < tol:
+            converged = True
+            break
+
+    return obj_old, converged
+
+
+def _profile_likelihood_ci(
+    X: np.ndarray,
+    y: np.ndarray,
+    beta_hat: np.ndarray,
+    ll_full: float,
+    *,
+    alpha: float,
+    firth: bool,
+    max_iter: int,
+    tol: float,
+    wald_se: np.ndarray,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Compute profile-likelihood CIs for every coefficient.
+
+    For each j we find b such that
+    ``2 * (ll_full - ll_constrained(beta_j = b)) == chi2_{1, 1-alpha}``,
+    using Brent's method. Initial brackets come from the Wald CI,
+    expanded outwards if needed.
+    """
+    p = beta_hat.size
+    half_target = 0.5 * stats.chi2.ppf(1 - alpha, df=1)  # 1.92 for 95%
+
+    ci_low = np.empty(p)
+    ci_high = np.empty(p)
+
+    z_crit = stats.norm.ppf(1 - alpha / 2)
+
+    for j in range(p):
+        b_hat = beta_hat[j]
+        se_j = wald_se[j] if wald_se[j] > 0 else 1.0
+
+        def gap(b: float) -> float:
+            ll_c, _conv = _refit_with_constraint(
+                X, y, j, b, firth=firth, init_beta=beta_hat,
+                max_iter=max_iter, tol=tol,
+            )
+            return (ll_full - ll_c) - half_target  # zero crossing = CI bound
+
+        # ----- Lower bound: search to the left of b_hat -----
+        ci_low[j] = _bracket_and_solve(gap, anchor=b_hat, step=z_crit * se_j,
+                                       direction=-1, max_expansions=8)
+        # ----- Upper bound: search to the right of b_hat -----
+        ci_high[j] = _bracket_and_solve(gap, anchor=b_hat, step=z_crit * se_j,
+                                        direction=+1, max_expansions=8)
+
+    return ci_low, ci_high
+
+
+def _bracket_and_solve(
+    gap: callable,
+    anchor: float,
+    step: float,
+    direction: int,
+    max_expansions: int = 8,
+) -> float:
+    """
+    Find a zero crossing of ``gap`` starting from ``anchor`` and moving
+    in ``direction`` (+/-1). ``step`` is the initial Wald-based step.
+
+    Returns the bound; falls back to anchor +/- ``max_expansions * step``
+    when no crossing is found (effectively an unbounded CI).
+    """
+    if step <= 0:
+        step = 1.0
+    a = anchor
+    fa = gap(a)
+    # gap(anchor) should be approximately -half_target (i.e. negative)
+    b = anchor + direction * step
+    fb = gap(b)
+    expansions = 0
+    while np.sign(fa) == np.sign(fb) and expansions < max_expansions:
+        step *= 2.0
+        b = anchor + direction * step
+        fb = gap(b)
+        expansions += 1
+    if np.sign(fa) == np.sign(fb):
+        # Could not bracket: report unbounded CI on this side
+        return -np.inf if direction < 0 else np.inf
+    try:
+        if direction < 0:
+            sol = optimize.brentq(gap, b, a, xtol=1e-4, rtol=1e-4, maxiter=50)
+        else:
+            sol = optimize.brentq(gap, a, b, xtol=1e-4, rtol=1e-4, maxiter=50)
+        return float(sol)
+    except (ValueError, RuntimeError):
+        return -np.inf if direction < 0 else np.inf
+
+
+# =============================================================================
+# LIKELIHOOD-RATIO P-VALUES
+# =============================================================================
+
+
+def _likelihood_ratio_pvalues(
+    X: np.ndarray,
+    y: np.ndarray,
+    beta_hat: np.ndarray,
+    ll_full: float,
+    *,
+    firth: bool,
+    max_iter: int,
+    tol: float,
+) -> np.ndarray:
+    """
+    Per-coefficient likelihood-ratio p-values for ``H_0: beta_j = 0``.
+
+    For each j, refit the model with beta_j fixed at 0, get
+    ``ll_restricted``, and report
+    ``P(chi2_1 >= 2 * (ll_full - ll_restricted))``.
+    """
+    p = beta_hat.size
+    pvals = np.empty(p)
+    for j in range(p):
+        ll_r, _conv = _refit_with_constraint(
+            X, y, j, 0.0, firth=firth, init_beta=beta_hat,
+            max_iter=max_iter, tol=tol,
+        )
+        lr = max(0.0, 2.0 * (ll_full - ll_r))
+        pvals[j] = float(stats.chi2.sf(lr, df=1))
+    return pvals
+
+
+__all__ = [
+    "LogitResult",
+    "firth_logit",
+    "mle_logit",
+    "fit_logit",
+    "is_design_ill_conditioned",
+    "detect_separation_after_fit",
+]
+
+
+# =============================================================================
+# NETWORK DELEGATIONS (2.18) — kanonične implementacije so v
+# biblium.utilsbib_modules.network; tu so ohranjeni ovoji za združljivost.
+# =============================================================================
+
+def normalize_symmetric_matrix(matrix, method="jaccard"):
+    """Delegates to biblium.utilsbib_modules.network.normalize_symmetric_matrix."""
+    from biblium.utilsbib_modules.network import normalize_symmetric_matrix as _f
+    return _f(matrix, method=method)
+
+
+def add_partitions(G, methods=None, **kwargs):
+    """Delegates to biblium.utilsbib_modules.network.add_partitions."""
+    from biblium.utilsbib_modules.network import add_partitions as _f
+    return _f(G, methods=methods, **kwargs)
+
+
+def save_network(G, filename, formats=None, vector_cols=None, partition_attr="partition"):
+    """Delegates to biblium.utilsbib_modules.network.save_network."""
+    from biblium.utilsbib_modules.network import save_network as _f
+    return _f(G, filename, formats=formats, vector_cols=vector_cols, partition_attr=partition_attr)
+
+
+def save_to_pajek(G, basename, partition_attrs=None, vector_attrs=None):
+    """Delegates to biblium.utilsbib_modules.network.save_to_pajek."""
+    from biblium.utilsbib_modules.network import save_to_pajek as _f
+    return _f(G, basename, partition_attrs=partition_attrs, vector_attrs=vector_attrs)
+
+
+# =============================================================================
+# RPYS — Reference Publication Year Spectroscopy (novo v 2.18)
+# =============================================================================
+
+def compute_rpys(
+    df,
+    reference_column="References",
+    include_pre_1900=False,
+    median_window=5,
+):
+    """
+    Reference Publication Year Spectroscopy (Marx, Bornmann, Barth & Leydesdorff 2014).
+
+    Vrne DataFrame s stolpci: "Cited Year", "Citations", "Median" (drseča
+    mediana čez `median_window` let) in "Deviation" (Citations - Median).
+    Vrhovi v Deviation označujejo zgodovinsko vplivna dela (korenine področja).
+    """
+    spec = compute_reference_spectrogram_scopus(
+        df, reference_column=reference_column, include_pre_1900=include_pre_1900
+    )
+    if spec.empty:
+        return pd.DataFrame(columns=["Cited Year", "Citations", "Median", "Deviation"])
+    out = spec.reset_index()
+    yr_min, yr_max = int(out["Cited Year"].min()), int(out["Cited Year"].max())
+    full = pd.DataFrame({"Cited Year": range(yr_min, yr_max + 1)})
+    out = full.merge(out, on="Cited Year", how="left")
+    out["Citations"] = out["Citations"].fillna(0).astype(int)
+    out["Median"] = out["Citations"].rolling(median_window, center=True, min_periods=1).median()
+    out["Deviation"] = out["Citations"] - out["Median"]
+    return out
+
+
+def rpys_top_references(
+    df,
+    cited_year,
+    reference_column="References",
+    top_n=10,
+    separator="; ",
+):
+    """
+    Najpogostejše posamezne reference, ki citirajo dano leto (za interpretacijo
+    RPYS vrhov). Reference se štejejo kot identični nizi med dokumenti.
+    """
+    if reference_column not in df.columns:
+        return pd.DataFrame(columns=["Cited Year", "Reference", "Local Citations"])
+    refs = (
+        df[reference_column].dropna().astype(str).str.split(separator).explode().str.strip()
+    )
+    pat = rf"\b{int(cited_year)}\b"
+    hits = refs[refs.str.contains(pat, regex=True, na=False)]
+    counts = hits.value_counts().head(top_n).reset_index()
+    counts.columns = ["Reference", "Local Citations"]
+    counts.insert(0, "Cited Year", int(cited_year))
+    return counts

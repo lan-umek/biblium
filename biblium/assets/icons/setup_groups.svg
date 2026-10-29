@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+  <!-- Background -->
+  <rect x="2" y="2" width="44" height="44" rx="4" fill="none" stroke="#777777" stroke-width="2"/>
+  
+  <!-- Group 1 - top left -->
+  <circle cx="14" cy="14" r="8" fill="#555555"/>
+  <circle cx="12" cy="12" r="2" fill="#404040"/>
+  <circle cx="16" cy="12" r="2" fill="#404040"/>
+  <circle cx="14" cy="16" r="2" fill="#404040"/>
+  
+  <!-- Group 2 - top right -->
+  <circle cx="34" cy="14" r="8" fill="#777777"/>
+  <circle cx="32" cy="12" r="2" fill="#404040"/>
+  <circle cx="36" cy="12" r="2" fill="#404040"/>
+  <circle cx="34" cy="16" r="2" fill="#404040"/>
+  
+  <!-- Group 3 - bottom center -->
+  <circle cx="24" cy="34" r="8" fill="#777777"/>
+  <circle cx="22" cy="32" r="2" fill="#404040"/>
+  <circle cx="26" cy="32" r="2" fill="#404040"/>
+  <circle cx="24" cy="36" r="2" fill="#404040"/>
+  
+  <!-- Connecting lines -->
+  <line x1="20" y1="18" x2="28" y2="18" stroke="#555555" stroke-width="1.5" stroke-dasharray="2,2"/>
+  <line x1="18" y1="20" x2="22" y2="28" stroke="#555555" stroke-width="1.5" stroke-dasharray="2,2"/>
+  <line x1="30" y1="20" x2="26" y2="28" stroke="#555555" stroke-width="1.5" stroke-dasharray="2,2"/>
+</svg>
