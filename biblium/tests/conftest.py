@@ -129,7 +129,10 @@ def logit_separated_dataset():
     n = 30
     x1 = np.linspace(-3, 3, n)
     y = (x1 > 0).astype(int)
-    x2 = np.linspace(-1, 1, n)
+    # 2.19: x2 must not be collinear with x1 (the former ``linspace(-1, 1)``
+    # was exactly x1/3, making the design singular: the Firth fit then never
+    # converged and the profile CIs depended on the scipy/numpy version).
+    x2 = np.sin(np.linspace(0.0, 6.0, n))
     X = np.column_stack([np.ones(n), x1, x2])
     return X, y
 

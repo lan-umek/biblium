@@ -242,6 +242,21 @@ class BasePanel(tk.Frame):
             fg=self.theme["text_muted"],
         )
     
+    def _show_no_data_message(self, message: str = None):
+        """Show a 'load a dataset first' notice in the options column.
+
+        2.19: several panels called this before it existed in the base class,
+        which crashed them when opened without a loaded dataset.
+        """
+        tk.Label(
+            self.options_content,
+            text=message or "📂 Please load a dataset first\n\nGo to DATA → Load Dataset",
+            font=FONTS.get_font("body"),
+            bg=self.theme["bg_secondary"],
+            fg=self.theme["text_muted"],
+            justify=tk.CENTER,
+        ).pack(expand=True, padx=8, pady=16)
+
     def _show_initial_message(self, message: str = None):
         """Show initial message in results area."""
         self._stop_active_spinners()
