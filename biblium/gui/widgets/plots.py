@@ -4,6 +4,7 @@ Plot Widgets
 ============
 Matplotlib plot containers with toolbar.
 """
+from __future__ import annotations  # 2.19: anotacije (Figure) ne smejo podreti uvoza, če TkAgg ni na voljo
 
 import tkinter as tk
 from tkinter import ttk, filedialog
