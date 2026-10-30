@@ -1,6 +1,6 @@
 """Biblium - Comprehensive Bibliometric Analysis Library"""
 
-__version__ = "2.19.0"
+__version__ = "2.19.1"
 
 # Global matplotlib style — no grid by default (po plot-quality memo, Lan)
 try:
@@ -29,9 +29,10 @@ from biblium.reportbib import check_report_data_availability, validate_template,
 from biblium import sdg_identifier
 from biblium import indicators  # novo v 2.19
 # 2.19 (drugi paket): samostojni moduli, dostopni tudi brez BiblioStats
+# (biblium.datasets se ne uvaža tu, da `python -m biblium.datasets` ne sproži RuntimeWarning)
 from biblium import (  # noqa: E402
     prisma, metadata_completion, journal_rankings, funding, reference_patterns,
-    network_dynamics, dual_map, snowball, term_extraction,
+    network_dynamics, dual_map, snowball, term_extraction, merge,
 )
 
 # Configuration system

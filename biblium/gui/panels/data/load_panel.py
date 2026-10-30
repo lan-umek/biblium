@@ -202,7 +202,10 @@ class LoadDataPanel(BasePanel):
                 command=self._on_sample_selected,
             )
             rb.pack(anchor=tk.W, pady=1)
-        
+
+        # Domain Datasets Card (2.19.1) - OpenAlex samples for many scientific domains
+        self._build_domain_datasets_card()
+
         # Data Source Card
         source_card = Card(self.options_content, title="🗄️ Data Source", theme=self.theme_name)
         source_card.pack(fill=tk.X, padx=8, pady=8)
@@ -634,6 +637,125 @@ class LoadDataPanel(BasePanel):
         size_str = f"{size / 1024:.1f} KB" if size < 1024 * 1024 else f"{size / (1024 * 1024):.1f} MB"
         self.status_var.set(f"Sample selected: {size_str}")
     
+    # ------------------------------------------------------------------
+    # Domain datasets (2.19.1)
+    # ------------------------------------------------------------------
+    def _build_domain_datasets_card(self):
+        """Card listing the OpenAlex domain/journal demo datasets from ``biblium.datasets``."""
+        try:
+            from biblium import datasets as _ds
+        except Exception:
+            return
+        self._ds = _ds
+        card = Card(self.options_content, title="🌍 Domain Datasets (OpenAlex)", theme=self.theme_name)
+        card.pack(fill=tk.X, padx=8, pady=8)
+        tk.Label(
+            card.content,
+            text="Demo datasets (~200 works) for many scientific domains and journals:",
+            font=FONTS.get_font("small"),
+            bg=self.theme["bg_card"],
+            fg=self.theme["text_muted"],
+            wraplength=320, justify=tk.LEFT,
+        ).pack(anchor=tk.W, pady=(0, 4))
+        self.domain_combo = LabeledCombobox(
+            card.content, label="Domain:", values=["All"] + list(_ds.DOMAINS), default="All",
+            theme=self.theme_name, label_width=10, command=self._on_domain_changed,
+        )
+        self.domain_combo.pack(fill=tk.X, pady=2)
+        self.domain_dataset_combo = LabeledCombobox(
+            card.content, label="Dataset:", values=self._domain_dataset_labels("All"),
+            theme=self.theme_name, label_width=10, width=34, command=self._on_domain_dataset_selected,
+        )
+        self.domain_dataset_combo.pack(fill=tk.X, pady=2)
+        self.domain_info_var = tk.StringVar(value="")
+        tk.Label(
+            card.content, textvariable=self.domain_info_var, font=FONTS.get_font("small"),
+            bg=self.theme["bg_card"], fg=self.theme["text_muted"], wraplength=320, justify=tk.LEFT,
+        ).pack(anchor=tk.W, pady=(2, 4))
+        row = tk.Frame(card.content, bg=self.theme["bg_card"])
+        row.pack(fill=tk.X)
+        ThemedButton(row, text="Use dataset", command=self._use_domain_dataset, theme=self.theme_name,
+                     style="secondary").pack(side=tk.LEFT, padx=(0, 6))
+        ThemedButton(row, text="Download missing…", command=self._download_domain_datasets, theme=self.theme_name,
+                     style="secondary").pack(side=tk.LEFT)
+
+    def _domain_dataset_labels(self, domain: str):
+        specs = [s for s in self._ds.DATASETS.values() if domain == "All" or s.domain == domain]
+        labels = []
+        for s in specs:
+            mark = "" if os.path.exists(self._ds.dataset_path(s.name)) else " (not downloaded)"
+            labels.append(f"{s.name} – {s.title}{mark}")
+        return labels or ["(none)"]
+
+    def _selected_domain_spec(self):
+        label = self.domain_dataset_combo.get() if hasattr(self, "domain_dataset_combo") else ""
+        name = (label or "").split(" – ")[0].strip()
+        return self._ds.DATASETS.get(name)
+
+    def _on_domain_changed(self, domain: str):
+        self.domain_dataset_combo.set_values(self._domain_dataset_labels(domain), keep_selection=False)
+        self._on_domain_dataset_selected(self.domain_dataset_combo.get())
+
+    def _on_domain_dataset_selected(self, _label: str = ""):
+        spec = self._selected_domain_spec()
+        if spec is None:
+            self.domain_info_var.set("")
+            return
+        path = self._ds.dataset_path(spec.name)
+        status = "bundled" if os.path.exists(path) else "not downloaded – use 'Download missing…'"
+        self.domain_info_var.set(f"{spec.domain} · {spec.kind} · {spec.description} [{status}]")
+
+    def _use_domain_dataset(self):
+        spec = self._selected_domain_spec()
+        if spec is None:
+            return
+        path = self._ds.dataset_path(spec.name)
+        if not os.path.exists(path):
+            messagebox.showinfo(
+                "Dataset not downloaded",
+                f"'{spec.name}' is not bundled yet.\n\nClick 'Download missing…' (needs internet access) or run:\n"
+                f"python -m biblium.datasets --fetch {spec.name} --email you@example.org",
+            )
+            return
+        self.dataset_path = path
+        self.file_var.set(f"{spec.name} (OpenAlex domain dataset)")
+        self.db_combo.set("OpenAlex")
+        self.sample_var.set("none")
+        size = os.path.getsize(path)
+        self.status_var.set(f"Domain dataset selected: {size / 1024:.1f} KB")
+
+    def _download_domain_datasets(self):
+        """Fetch the selected dataset (or all datasets of the chosen domain) from OpenAlex in a thread."""
+        spec = self._selected_domain_spec()
+        domain = self.domain_combo.get()
+        if spec is None:
+            return
+        if messagebox.askyesno("Download from OpenAlex",
+                               f"Download all missing datasets for '{domain}'?\n(No = only '{spec.name}')"):
+            names = [s.name for s in self._ds.DATASETS.values() if domain == "All" or s.domain == domain]
+        else:
+            names = [spec.name]
+        email = os.environ.get("OPENALEX_MAILTO") or os.environ.get("BIBLIUM_EMAIL")
+        self.status_var.set(f"Downloading {len(names)} dataset(s) from OpenAlex…")
+
+        def worker():
+            try:
+                self._ds.fetch_all(email=email, names=names, verbose=False)
+                msg = "Download finished."
+            except Exception as e:  # noqa: BLE001
+                msg = f"Download failed: {e}"
+            try:
+                self.after(0, lambda: self._after_domain_download(msg))
+            except Exception:
+                pass
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _after_domain_download(self, msg: str):
+        self.status_var.set(msg)
+        self.domain_dataset_combo.set_values(self._domain_dataset_labels(self.domain_combo.get()))
+        self._on_domain_dataset_selected()
+
     def _on_sample_selected(self):
         """Handle sample dataset radio button selection."""
         sample_type = self.sample_var.get()

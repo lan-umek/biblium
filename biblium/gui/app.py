@@ -383,6 +383,8 @@ class BibliumApp(tk.Tk):
         self.workspace.register_panel("view", ViewDataPanel)
         self.workspace.register_panel("filter", FilterPanel)
         self.workspace.register_panel("quality", ViewDataPanel)  # Placeholder
+        from biblium.gui.panels.data.merge_panel import MergeDatabasesPanel  # 2.19
+        self.workspace.register_panel("merge_databases", MergeDatabasesPanel)
         
         # Analysis panels
         from biblium.gui.panels.analysis.counts_panel import CountsPanel

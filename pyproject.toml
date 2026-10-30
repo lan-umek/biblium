@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "biblium"
-version = "2.19.0"
+version = "2.19.1"
 description = "Comprehensive Python library for bibliometric analysis of scientific literature"
 readme = "README.md"
 license = "MIT"
@@ -156,6 +156,9 @@ biblium = [
     "data/*.csv",
     "data/*.txt",
     "data/*.xlsx",
+    "data/datasets/*.csv.gz",
+    "data/datasets/*.csv",
+    "data/datasets/README.md",
     "assets/*.svg",
     "tests/fixtures/*",
     "tests/README.md",

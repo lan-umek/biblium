@@ -97,7 +97,7 @@ def read_oa_csv(
         df.rename(columns=mapper, inplace=True)
 
     for c in df.columns:
-        if df[c].dtype == "object":
+        if df[c].dtype == "object" or str(df[c].dtype) in ("str", "string"):
             try:
                 df[c] = pd.to_numeric(df[c], errors="raise")
             except Exception:
@@ -151,7 +151,7 @@ def read_oa_xlsx(
 
     # Attempt to convert numeric columns
     for c in df.columns:
-        if df[c].dtype == "object":
+        if df[c].dtype == "object" or str(df[c].dtype) in ("str", "string"):
             try:
                 df[c] = pd.to_numeric(df[c], errors="raise")
             except Exception:
@@ -1527,7 +1527,7 @@ def read_dimensions_csv(
 
     # Convert numeric columns
     for c in df.columns:
-        if df[c].dtype == "object":
+        if df[c].dtype == "object" or str(df[c].dtype) in ("str", "string"):
             try:
                 df[c] = pd.to_numeric(df[c], errors="raise")
             except Exception:
@@ -1622,7 +1622,7 @@ def read_lens_csv(
 
     # Convert numeric columns
     for c in df.columns:
-        if df[c].dtype == "object":
+        if df[c].dtype == "object" or str(df[c].dtype) in ("str", "string"):
             try:
                 df[c] = pd.to_numeric(df[c], errors="raise")
             except Exception:
@@ -2444,7 +2444,7 @@ def read_ieee_csv(
 
     # Convert numeric columns
     for c in df.columns:
-        if df[c].dtype == "object":
+        if df[c].dtype == "object" or str(df[c].dtype) in ("str", "string"):
             try:
                 df[c] = pd.to_numeric(df[c], errors="raise")
             except Exception:
@@ -2804,7 +2804,7 @@ def read_semantic_scholar_csv(
 
     # Convert numeric columns
     for c in df.columns:
-        if df[c].dtype == "object":
+        if df[c].dtype == "object" or str(df[c].dtype) in ("str", "string"):
             try:
                 df[c] = pd.to_numeric(df[c], errors="raise")
             except Exception:
@@ -3538,7 +3538,7 @@ def read_generic_csv(
 
     # Convert numeric columns
     for c in df.columns:
-        if df[c].dtype == "object":
+        if df[c].dtype == "object" or str(df[c].dtype) in ("str", "string"):
             try:
                 df[c] = pd.to_numeric(df[c], errors="raise")
             except Exception:

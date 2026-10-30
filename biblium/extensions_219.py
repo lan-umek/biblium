@@ -345,6 +345,66 @@ class Extensions219Mixin:
         self._save_table(self.snowball_df, "snowball candidates")
         return self.snowball_df
 
+    # ------------------------------------------------------------------ merging databases
+    @classmethod
+    def from_databases(cls, sources, key="doi", columns="union", priority=None, db="scopus",
+                       keep_source_columns=True, verbose=True, **kwargs):
+        """
+        Zgradi ``BiblioStats`` iz več izvozov različnih baz (Scopus, WoS, OpenAlex,
+        PubMed, Dimensions, Lens …), združenih in očiščenih podvojenih zapisov
+        (``biblium.merge.combine_databases``).
+
+        Parameters
+        ----------
+        sources : list of (pot | DataFrame, db)
+            npr. ``[("scopus.csv", "scopus"), ("wos.txt", "wos")]``.
+        key : {"doi", "title", "doi_title"}
+            Ključ ujemanja (privzeto DOI; ``doi_title`` = DOI, brez DOI naslov).
+        columns : {"union", "intersection"}
+            Unija vseh stolpcev (veliko manjkajočih vrednosti) ali presek
+            stolpcev, ki jih imajo vse baze.
+        db : str
+            Oznaka baze za nastali objekt (stolpci so v Scopusovi obliki, ločilo
+            "; "), zato privzeto "scopus". Izvor vsakega zapisa je v stolpcu
+            ``Source DB``.
+        **kwargs : posredovano konstruktorju ``BiblioStats`` (res_folder, preprocess_level …).
+
+        Shrani ``merge_report`` (prekrivanje baz, pokritost stolpcev) in
+        ``source_dbs``.
+        """
+        from biblium.merge import combine_databases
+        merged, report = combine_databases(sources, key=key, columns=columns, priority=priority,
+                                           keep_source_columns=keep_source_columns, verbose=verbose)
+        obj = cls(df=merged, db=db, **kwargs)
+        obj.merge_report = report
+        obj.source_dbs = report["priority"]
+        obj._record_params("merge_databases", match_key=key, columns=columns, sources=report["priority"],
+                           n_input=report["n_input_total"], n_output=report["n_output"],
+                           n_removed=report["n_removed"])
+        obj._save_table(report["overlap"], "merge source overlap")
+        obj._save_table(report["column_coverage"], "merge column coverage")
+        return obj
+
+    def merge_with(self, sources, key="doi", columns="union", priority=None, this_db=None, **kwargs):
+        """
+        Trenutnemu naboru doda zapise iz dodatnih baz (``sources`` kot pri
+        ``from_databases``) in odstrani podvojene. Spremeni ``self.df``;
+        shrani ``merge_report``.
+        """
+        from biblium.merge import combine_databases
+        this_db = this_db or getattr(self, "db", "scopus") or "scopus"
+        all_sources = [(self.df, this_db)] + list(sources)
+        merged, report = combine_databases(all_sources, key=key, columns=columns, priority=priority, **kwargs)
+        self.df = merged
+        self.n = len(merged)
+        self.merge_report = report
+        self.source_dbs = report["priority"]
+        self._record_params("merge_databases", match_key=key, columns=columns, sources=report["priority"],
+                            n_input=report["n_input_total"], n_output=report["n_output"],
+                            n_removed=report["n_removed"])
+        self._save_table(report["overlap"], "merge source overlap")
+        return report
+
     # ------------------------------------------------------------------ term extraction
     def extract_terms(self, columns=("Title", "Abstract"), max_len=3, min_occurrences=10, share=0.6,
                       add_column=True, col_name="Extracted Terms", plot=False, **kwargs):

@@ -36,6 +36,16 @@ except ImportError:
     HAS_REQUESTS = False
 
 
+def _sort_key(label_or_key) -> str:
+    """GUI label or key -> SORT_OPTIONS key (e.g. 'Newest first' -> 'newest')."""
+    from biblium.openalex_api import SORT_LABELS, DEFAULT_SORT
+    v = (label_or_key or DEFAULT_SORT).strip()
+    for k, lab in SORT_LABELS.items():
+        if v == k or v.lower() == lab.lower():
+            return k
+    return v
+
+
 class APIDataPanel(BasePanel):
     """Panel for fetching data from OpenAlex and Dimensions APIs."""
     
@@ -193,6 +203,20 @@ class APIDataPanel(BasePanel):
             label_width=12,
         )
         self.max_results_spin.pack(fill=tk.X, pady=4)
+        
+        # Result ordering (2.19.1): which records are kept when more match than Max Results
+        from biblium.openalex_api import SORT_LABELS, DEFAULT_SORT
+        self.sort_combo = LabeledCombobox(
+            filter_card.content,
+            label="Order:",
+            values=list(SORT_LABELS.values()),
+            default=SORT_LABELS[DEFAULT_SORT],
+            theme=self.theme_name,
+            label_width=12,
+            tooltip="Which records are returned when the query matches more than 'Max Results': "
+                    "most/least cited, newest, oldest, relevance (OpenAlex/PubMed) or a random sample (OpenAlex).",
+        )
+        self.sort_combo.pack(fill=tk.X, pady=4)
         
         # Open Access filter
         self.open_access_cb = LabeledCheckbox(
@@ -616,6 +640,7 @@ class APIDataPanel(BasePanel):
         max_results = self.max_results_spin.get()
         doc_type = self.doc_type_combo.get()
         open_access = self.open_access_cb.get()
+        sort = self.sort_combo.get() if hasattr(self, "sort_combo") else "Most cited first"
         email = self.email_entry.get().strip()
         api_key = self.api_key_var.get().strip() if "Dimensions" in api else ""
         
@@ -628,6 +653,7 @@ class APIDataPanel(BasePanel):
             "max_results": max_results,
             "doc_type": doc_type,
             "open_access": open_access,
+            "sort": sort,
             "email": email,
             "api_key": api_key,
         }
@@ -719,12 +745,18 @@ class APIDataPanel(BasePanel):
         
         filter_str = ",".join(filters)
         
+        # Ordering / sampling (2.19.1)
+        from biblium.openalex_api import resolve_sort, paging_params
+        sort_value = resolve_sort(params.get("sort"), has_search=(search_type == "Keywords"))
+        if sort_value.startswith("relevance_score"):
+            # relevance needs a ``search`` parameter; move the keyword query there
+            filters = [f for f in filters if not f.startswith("title_and_abstract.search:")]
+            filter_str = ",".join(filters)
+        
         # Build request params
-        request_params = {
-            "filter": filter_str,
-            "per_page": min(200, max_results),  # OpenAlex max is 200 per page
-            "sort": "cited_by_count:desc",
-        }
+        request_params = {"filter": filter_str}
+        if sort_value.startswith("relevance_score"):
+            request_params["search"] = query
         
         if email:
             request_params["mailto"] = email
@@ -744,7 +776,7 @@ class APIDataPanel(BasePanel):
         try:
             while len(all_results) < max_results:
                 page += 1
-                request_params["cursor"] = cursor
+                request_params.update(paging_params(sort_value, max_results, len(all_results), cursor, page))
                 
                 # Update progress in UI thread
                 self.after(0, lambda p=page, c=len(all_results), m=max_results: 
@@ -763,7 +795,7 @@ class APIDataPanel(BasePanel):
                 # Get next cursor
                 meta = data.get("meta", {})
                 cursor = meta.get("next_cursor")
-                if not cursor:
+                if sort_value != "random" and not cursor:
                     break
         finally:
             session.close()
@@ -986,13 +1018,17 @@ class APIDataPanel(BasePanel):
         pubmed_query += f" AND {year_from}:{year_to}[dp]"
         
         # Search for PMIDs
+        # Ordering (2.19.1): E-utilities only support relevance and pub_date (newest first)
+        sort_key = _sort_key(params.get("sort"))
         search_params = {
             "db": "pubmed",
             "term": pubmed_query,
             "retmax": max_results,
             "retmode": "json",
-            "sort": "relevance",
+            "sort": "pub_date" if sort_key == "newest" else "relevance",
         }
+        if sort_key not in ("newest", "relevance"):
+            print(f"[biblium] PubMed does not support ordering '{sort_key}'; using relevance.")
         
         if email:
             search_params["email"] = email
@@ -1295,10 +1331,13 @@ class APIDataPanel(BasePanel):
         where_str = " and ".join(where_clauses)
         
         # Build full query
+        sort_key = _sort_key(params.get("sort"))
+        dim_sort = {"most_cited": "sort by times_cited desc", "least_cited": "sort by times_cited asc",
+                    "newest": "sort by date desc", "oldest": "sort by date asc"}.get(sort_key, "")
         dsl_query = f"""
         {search_clause}
         where {where_str}
-        return publications[all]
+        return publications[all] {dim_sort}
         limit {min(max_results, 1000)}
         """
         

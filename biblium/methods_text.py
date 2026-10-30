@@ -43,6 +43,9 @@ _REFS = {
 
 def _dataset_sentence(bib, language):
     db = DB_NAMES.get(getattr(bib, "db", ""), getattr(bib, "db", "an unknown database"))
+    srcs = getattr(bib, "source_dbs", None)
+    if srcs and len(srcs) > 1:  # 2.19: združeni nabor iz več baz
+        db = ", ".join(DB_NAMES.get(x, x) for x in srcs)
     n = len(bib.df) if getattr(bib, "df", None) is not None else None
     year_range = ""
     try:
@@ -52,19 +55,34 @@ def _dataset_sentence(bib, language):
             year_range = (int(years.min()), int(years.max()))
     except Exception:
         pass
+    spec = getattr(bib, "dataset_spec", None)  # 2.19.1: vgrajeni domenski nabor (biblium.datasets)
     if language == "sl":
-        s = f"Bibliografski podatki so bili pridobljeni iz baze {db}"
+        s = f"Bibliografski podatki so bili pridobljeni iz baz {db}" if (srcs and len(srcs) > 1) else f"Bibliografski podatki so bili pridobljeni iz baze {db}"
         if n:
             s += f" in obsegajo {n} dokumentov"
         if year_range:
             s += f", objavljenih med letoma {year_range[0]} in {year_range[1]}"
-        return s + "."
+        s += "."
+        if spec is not None:
+            from biblium.openalex_api import sort_description
+            q = f"revije {spec.title}" if spec.kind == "journal" else f"tematike »{spec.title}«"
+            s += (f" Gre za demonstracijski nabor knjižnice biblium ({spec.name}) s področja {spec.domain}: "
+                  f"{sort_description(spec.sort, 'sl')} {q}, pridobljeni prek OpenAlex API"
+                  + (f" (iskalni niz: {spec.search})." if spec.search else "."))
+        return s
     s = f"Bibliographic records were retrieved from {db}"
     if n:
         s += f", comprising {n} documents"
     if year_range:
         s += f" published between {year_range[0]} and {year_range[1]}"
-    return s + "."
+    s += "."
+    if spec is not None:
+        from biblium.openalex_api import sort_description
+        q = f"the journal {spec.title}" if spec.kind == "journal" else f"the topic '{spec.title}'"
+        s += (f" The data are the biblium demonstration dataset '{spec.name}' ({spec.domain}): "
+              f"{sort_description(spec.sort, 'en')} from {q}, retrieved through the OpenAlex API"
+              + (f" (search string: {spec.search})." if spec.search else "."))
+    return s
 
 
 def _analysis_sentences(bib, language):
@@ -339,6 +357,18 @@ def _analysis_sentences(bib, language):
         else:
             out.append(f"Terms were extracted from {', '.join(te.get('columns', []))} following the VOSviewer approach (noun phrases up to {te.get('max_len')} words, at least {te.get('min_occurrences')} occurrences, the {int(100 * te.get('share', 0.6))} % most relevant terms retained; van Eck & Waltman, 2011).")
         refs.append(_REFS["vos_terms"])
+
+    mg = p.get("merge_databases")
+    if mg:
+        srcs = ", ".join(DB_NAMES.get(x, x) for x in mg.get("sources", []))
+        how = {"doi": "DOI", "title": "normaliziranih naslovov", "doi_title": "DOI (brez DOI po naslovu)"}.get(mg.get("match_key"), mg.get("match_key"))
+        how_en = {"doi": "DOI", "title": "normalised titles", "doi_title": "DOI (title when no DOI)"}.get(mg.get("match_key"), mg.get("match_key"))
+        pol = "unija stolpcev" if mg.get("columns") == "union" else "presek stolpcev"
+        pol_en = "union of columns" if mg.get("columns") == "union" else "intersection of columns"
+        if language == "sl":
+            out.append(f"Zapise iz baz {srcs} smo združili po {how} ({pol}); od {mg.get('n_input')} zapisov je po odstranitvi {mg.get('n_removed')} podvojenih ostalo {mg.get('n_output')} enoličnih dokumentov.")
+        else:
+            out.append(f"Records from {srcs} were merged by {how_en} ({pol_en}); of {mg.get('n_input')} records, {mg.get('n_removed')} duplicates were removed, leaving {mg.get('n_output')} unique documents.")
 
     if getattr(bib, "cited_sources_df", None) is not None:
         if language == "sl":

@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.19.1 (2026-10-30)
+
+### New
+- `biblium.merge`: combine exports from several databases (Scopus, WoS, OpenAlex, PubMed, Dimensions, Lens, …) into one de-duplicated dataset. Matching by DOI (default), by normalised title, or DOI with title fallback; column policy `union` (all fields) or `intersection` (fields common to all sources); per-source citation counts, union of keywords/references, longest abstract, source priority; provenance columns `Source DB`, `N sources`, `Merge key`, `Match type`; overlap and column-coverage reports.
+- `BiblioStats.from_databases(sources, key=..., columns=...)` and `BiblioStats.merge_with(sources, ...)`; `methods_text()` describes the merge.
+- GUI: *Data → Merge Databases* panel (file pickers per source, matching options, overlap tables/plot, loads the merged dataset).
+- `biblium.datasets`: catalogue of 47 OpenAlex demo datasets (~200 works each) covering public administration (8 topics incl. a Slovenian sample), medicine, sociology, political science, economics, business, education, psychology, law, computer science, mathematics, environmental and life sciences, information science, plus 12 journal-specific samples (PAR, JPART, PMR, CEPAR, Scientometrics, JOI, ASR, AER, The Lancet, Harvard Law Review, CACM, Annals of Mathematics). `fetch_dataset`/`fetch_all` download through the OpenAlex API and write website-export-compatible `.csv.gz` files; `load_dataset(name)` returns a `BiblioStats`; CLI `python -m biblium.datasets --fetch-all --email …`; `methods_text()` describes the dataset. GUI: *Load Data → Domain Datasets* card (domain/dataset pickers, Use dataset, Download missing…).
+
+### Fixed
+- `beautifulsoup4` and `lxml` added to core dependencies (COBISS HTML parsing); SPDX license metadata.
+- GUI imports without a TkAgg backend (lazy annotations in `plots.py`); `BasePanel._show_no_data_message` restored (seven panels crashed when opened without data).
+- Firth test fixture was collinear (profile-CI test depended on the scipy version).
+- `readbib`: numeric coercion in the OpenAlex/Dimensions/Lens readers did not run under pandas ≥ 3 (string dtype is `str`, not `object`), so `Cited by`/`Year` stayed text.
+
 ## 2.19.0 (2026-10-29)
 
 ### New analyses (`biblium.indicators`, each with a `BiblioStats` method and a GUI panel)

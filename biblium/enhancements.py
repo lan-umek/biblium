@@ -1168,6 +1168,8 @@ def get_available_analyses(instance: Any) -> List[Dict[str, Any]]:
          "description": "Citation-based corpus expansion via OpenAlex"},
         {"name": "Term Extraction", "method": "extract_terms", "requires": ["Title"],
          "description": "VOSviewer-style noun-phrase terms with relevance scores"},
+        {"name": "Merge Databases", "method": "merge_with", "requires": ["DOI"],
+         "description": "Combine exports from several databases by DOI/title and remove duplicates"},
     ]
     
     # Check availability based on columns

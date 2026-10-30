@@ -58,6 +58,73 @@ OPENALEX_BASE_URL = "https://api.openalex.org"
 # Entity types
 ENTITY_TYPES = Literal["works", "authors", "institutions", "sources", "concepts", "publishers", "funders", "topics"]
 
+# ---------------------------------------------------------------------------
+# Result ordering (2.19.1): which records are returned when only a subset is fetched
+# ---------------------------------------------------------------------------
+#: label -> OpenAlex ``sort`` value (``"random"`` uses OpenAlex ``sample``).
+SORT_OPTIONS: Dict[str, str] = {
+    "most_cited": "cited_by_count:desc",
+    "least_cited": "cited_by_count:asc",
+    "newest": "publication_date:desc",
+    "oldest": "publication_date:asc",
+    "relevance": "relevance_score:desc",   # only meaningful together with a search string
+    "random": "random",                    # random sample (OpenAlex ``sample`` + ``seed``)
+}
+SORT_LABELS: Dict[str, str] = {
+    "most_cited": "Most cited first",
+    "least_cited": "Least cited first",
+    "newest": "Newest first",
+    "oldest": "Oldest first",
+    "relevance": "Relevance (search string)",
+    "random": "Random sample",
+}
+DEFAULT_SORT = "most_cited"
+MAX_SAMPLE = 10_000  # OpenAlex limit for ``sample``
+
+
+def resolve_sort(sort: Optional[str], has_search: bool = True) -> str:
+    """Map a ``SORT_OPTIONS`` key, a GUI label or a raw OpenAlex sort string to an API sort value.
+
+    ``relevance`` without a search string is not accepted by OpenAlex, so it falls back to
+    ``cited_by_count:desc``. Returns ``"random"`` for random sampling.
+    """
+    if not sort:
+        sort = DEFAULT_SORT
+    key = sort.strip()
+    label_to_key = {v.lower(): k for k, v in SORT_LABELS.items()}
+    if key.lower() in label_to_key:
+        key = label_to_key[key.lower()]
+    if key in SORT_OPTIONS:
+        value = SORT_OPTIONS[key]
+    else:
+        value = key  # raw OpenAlex value, e.g. "fwci:desc"
+    if value.startswith("relevance_score") and not has_search:
+        value = SORT_OPTIONS["most_cited"]
+    return value
+
+
+def sort_description(sort: Optional[str], language: str = "en") -> str:
+    """Human-readable description of the ordering for methods texts."""
+    key = (sort or DEFAULT_SORT).strip()
+    label_to_key = {v.lower(): k for k, v in SORT_LABELS.items()}
+    key = label_to_key.get(key.lower(), key)
+    sl = {"most_cited": "najbolj citirani zapisi", "least_cited": "najmanj citirani zapisi", "newest": "najnovejši zapisi",
+          "oldest": "najstarejši zapisi", "relevance": "zapisi, razvrščeni po relevantnosti iskalnega niza",
+          "random": "naključni vzorec zapisov"}
+    en = {"most_cited": "the most cited records", "least_cited": "the least cited records", "newest": "the most recent records",
+          "oldest": "the oldest records", "relevance": "records ranked by search relevance",
+          "random": "a random sample of records"}
+    table = sl if language == "sl" else en
+    return table.get(key, f"records ordered by {key}" if language != "sl" else f"zapisi, razvrščeni po {key}")
+
+
+def paging_params(sort_value: str, n_wanted: int, got: int, cursor: Optional[str], page: int,
+                  per_page: int = 200, seed: int = 42) -> Dict[str, Any]:
+    """Request parameters for the next page: cursor pagination for sorted queries, ``sample``+``page`` for random."""
+    if sort_value == "random":
+        return {"sample": min(n_wanted, MAX_SAMPLE), "seed": seed, "per_page": min(per_page, n_wanted - got), "page": page}
+    return {"sort": sort_value, "per_page": min(per_page, n_wanted - got), "cursor": cursor or "*"}
+
 # Common filters for works
 WORK_FILTERS = {
     "publication_year": "publication_year",
@@ -456,8 +523,9 @@ class OpenAlexClient:
             - countries: "US|UK|DE"
             - concepts: concept ID
         sort : str
-            Sort order. Options: relevance_score, cited_by_count, 
-            publication_date, etc. Add :desc or :asc.
+            Sort order: a ``SORT_OPTIONS`` key ("most_cited", "newest", "oldest",
+            "relevance", "random", ...) or a raw OpenAlex value such as
+            "cited_by_count:desc". "random" draws a random sample (seeded).
         max_results : int
             Maximum number of results to return.
             
@@ -468,14 +536,13 @@ class OpenAlexClient:
         """
         works = []
         cursor = "*"
+        page = 0
+        sort_value = resolve_sort(sort, has_search=bool(query))
         
         while len(works) < max_results:
-            params = {
-                "search": query,
-                "per_page": min(self.per_page, max_results - len(works)),
-                "sort": sort,
-                "cursor": cursor,
-            }
+            page += 1
+            params = {"search": query}
+            params.update(paging_params(sort_value, max_results, len(works), cursor, page, self.per_page))
             
             if filters:
                 params["filter"] = self._build_filter_string(filters)
@@ -490,7 +557,7 @@ class OpenAlexClient:
             
             # Get next cursor
             cursor = data.get("meta", {}).get("next_cursor")
-            if not cursor:
+            if sort_value != "random" and not cursor:
                 break
         
         return works[:max_results]
@@ -726,7 +793,9 @@ class OpenAlexClient:
         filters : dict, optional
             Filters to apply.
         sort : str
-            Sort order.
+            Sort order: a ``SORT_OPTIONS`` key ("most_cited", "newest", "oldest",
+            "relevance", "random") or a raw OpenAlex value; decides which records
+            are returned when fewer than all matching works are downloaded.
         max_results : int
             Maximum number of works to download.
         progress : bool
@@ -739,16 +808,15 @@ class OpenAlexClient:
         """
         works = []
         cursor = "*"
+        page = 0
+        sort_value = resolve_sort(sort, has_search=bool(query))
         
         if progress:
-            print(f"Downloading works from OpenAlex (max {max_results})...")
+            print(f"Downloading works from OpenAlex (max {max_results}, order: {sort_value})...")
         
         while len(works) < max_results:
-            params = {
-                "per_page": min(self.per_page, max_results - len(works)),
-                "sort": sort,
-                "cursor": cursor,
-            }
+            page += 1
+            params = paging_params(sort_value, max_results, len(works), cursor, page, self.per_page)
             
             if query:
                 params["search"] = query
@@ -769,7 +837,7 @@ class OpenAlexClient:
                 print(f"  Downloaded {len(works)} / {max_results}...", end="\r")
             
             cursor = data.get("meta", {}).get("next_cursor")
-            if not cursor:
+            if sort_value != "random" and not cursor:
                 break
         
         if progress:
@@ -1376,6 +1444,7 @@ def search_openalex(
     entity_type: ENTITY_TYPES = "works",
     max_results: int = 100,
     email: Optional[str] = None,
+    sort: str = "relevance",
     **filters,
 ) -> pd.DataFrame:
     """
@@ -1391,6 +1460,9 @@ def search_openalex(
         Maximum results.
     email : str, optional
         Your email for polite pool.
+    sort : str
+        Ordering of works when only ``max_results`` are returned ("relevance",
+        "most_cited", "newest", "oldest", "random" or a raw OpenAlex sort).
     **filters
         Additional filters.
         
@@ -1401,7 +1473,7 @@ def search_openalex(
     client = OpenAlexClient(email=email)
     
     if entity_type == "works":
-        works = client.search_works(query, filters=filters, max_results=max_results)
+        works = client.search_works(query, filters=filters, max_results=max_results, sort=sort)
         return pd.DataFrame([w.to_dict() for w in works])
     elif entity_type == "authors":
         authors = client.search_authors(query, filters=filters, max_results=max_results)
@@ -1431,6 +1503,7 @@ def download_openalex_dataset(
     output_path: Optional[str] = None,
     max_results: int = 1000,
     email: Optional[str] = None,
+    sort: str = "most_cited",
     **filters,
 ) -> pd.DataFrame:
     """
@@ -1446,6 +1519,9 @@ def download_openalex_dataset(
         Maximum results.
     email : str, optional
         Your email for polite pool.
+    sort : str
+        Which records to keep when the query matches more than ``max_results``:
+        "most_cited" (default), "newest", "oldest", "relevance", "random", ...
     **filters
         Additional filters.
         
@@ -1455,7 +1531,7 @@ def download_openalex_dataset(
         Search results as a DataFrame.
     """
     client = OpenAlexClient(email=email)
-    df = client.download_works(query=query, filters=filters, max_results=max_results)
+    df = client.download_works(query=query, filters=filters, max_results=max_results, sort=sort)
 
     if output_path:
         df.to_csv(output_path, index=False)

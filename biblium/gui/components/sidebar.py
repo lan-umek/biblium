@@ -264,6 +264,7 @@ class Sidebar(tk.Frame):
             "items": [
                 {"id": "load", "text": "Load Dataset", "icon": "📂"},
                 {"id": "api_data", "text": "API Data", "icon": "🌐"},
+                {"id": "merge_databases", "text": "Merge Databases", "icon": "🔗"},
                 {"id": "view", "text": "View Data", "icon": "📋"},
                 {"id": "filter", "text": "Filter", "icon": "🔍"},
             ]
