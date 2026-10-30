@@ -1,10 +1,14 @@
 name: publish to PyPI
 
-# Sproži se ob git tagu oblike v2.19.0. Zahteva skrivnost PYPI_API_TOKEN
-# (Settings → Secrets and variables → Actions) ali "trusted publishing" na PyPI.
+# Sproži se ob git tagu oblike v2.19.1.
+# - Na PyPI naloži SAMO, če je nastavljena skrivnost PYPI_API_TOKEN
+#   (Settings → Secrets and variables → Actions → New repository secret).
+#   Če paket ročno naložiš s twine, korak preskoči že obstoječe datoteke.
+# - GitHub release z datotekami nastane v vsakem primeru.
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
 
 jobs:
   build-and-publish:
@@ -12,21 +16,30 @@ jobs:
     permissions:
       id-token: write   # za trusted publishing (če je nastavljeno na PyPI)
       contents: write   # za GitHub release
+    env:
+      PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - name: Build sdist and wheel
+        id: build
         run: |
           python -m pip install --upgrade pip build twine
           python -m build
           twine check dist/*
       - name: Publish to PyPI
+        if: env.PYPI_TOKEN != ''
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          password: ${{ secrets.PYPI_API_TOKEN }}   # izpusti, če uporabljaš trusted publishing
+          password: ${{ secrets.PYPI_API_TOKEN }}
+          skip-existing: true
+      - name: Note when PyPI upload is skipped
+        if: env.PYPI_TOKEN == ''
+        run: echo "PYPI_API_TOKEN ni nastavljen - PyPI korak preskocen (paket nalozi rocno s twine)."
       - name: GitHub release
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*
